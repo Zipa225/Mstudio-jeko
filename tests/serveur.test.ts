@@ -250,6 +250,7 @@ test("paid : le client paie, le webhook signé est vérifié, puis « Paiement r
   assert.equal(r.status, 200);
   assert.equal(r.body.reply, "Paiement reçu. 5 000 francs par Wave.");
   assert.equal(r.body.speech, "Paiement reçu. cinq mille francs par Wave.");
+  assert.equal(r.body.tone, "success", "l'écran de la vendeuse affiche un succès");
 
   const s = await getState();
   assert.equal(s.body.counts.paid, 11);

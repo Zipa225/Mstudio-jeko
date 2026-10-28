@@ -166,6 +166,7 @@ test("signature valide : le paiement est enregistré, puis seulement alors « Pa
   assert.ok(outcome.ok && outcome.announcement);
   assert.equal(outcome.ok && outcome.announcement?.reply, "Paiement reçu. 5 000 francs par Wave.");
   assert.equal(outcome.ok && outcome.announcement?.speech, "Paiement reçu. cinq mille francs par Wave.");
+  assert.equal(outcome.ok && outcome.announcement?.tone, "success", "l'écran affiche un succès");
   assert.equal(env.op().status, "paid");
   assert.deepEqual(env.store.paidToday(NOON), { total: 50_000, count: 11 }, "les 45 000 d'exemple plus les 5 000");
 });
