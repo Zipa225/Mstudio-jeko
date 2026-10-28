@@ -49,7 +49,7 @@ Notre serveur est le chef d'orchestre : il comprend la commande, relit le montan
 - **RG-08** Si le moteur ML d'Argus est en panne, Argus répond quand même et ne descend jamais sous `QUARANTINE` (repli « fail-closed ») : on le traite comme un refus, on ne contourne pas.
 - **RG-09** Argus injoignable : on bascule sur le score local simplifié, on l'affiche à Karim (« mode dégradé »), jamais d'exécution sans score.
 - **RG-10** Chaque tentative a un identifiant unique (Argus est idempotent : un rejeu renvoie `409`).
-- **RG-11** Seuls les transferts sortants sont envoyés à Argus. Un encaissement ne fait sortir aucun argent : il est accepté sans appel (à valider, voir D2).
+- **RG-11** Toutes les opérations, encaissements comme transferts, sont envoyées à Argus pour examen avant exécution (décision D2).
 
 ### Contrainte (le moment fort)
 - **RG-12** La phrase secrète est dite pendant la confirmation, mêlée à une phrase normale. La détection est floue (tolère une erreur de transcription).
@@ -86,7 +86,7 @@ Notre serveur est le chef d'orchestre : il comprend la commande, relit le montan
 
 ### Argus (contrat lu dans la branche `develop`)
 - **RI-04** Appel : `POST {ARGUS_URL}/v1/transactions/score`, en-tête `X-License-Key`. Budget de latence : 300 ms, timeout côté nous 2 s.
-- **RI-05** Corps envoyé : `transaction_id` (unique), `sender_account_id`, `beneficiary_account_id`, `amount`, `currency` (`XOF`), `timestamp` (ISO 8601), `transaction_channel` (`app`), `transaction_type` (`transfer`), `device_id`. Argus calcule lui-même l'historique et les agrégats : on n'envoie que des champs bruts.
+- **RI-05** Corps envoyé : `transaction_id` (unique), `sender_account_id`, `beneficiary_account_id`, `amount`, `currency` (`XOF`), `timestamp` (ISO 8601), `transaction_channel` (`app`), `transaction_type` (`transfer` pour un envoi, `cash_in` pour un encaissement), `device_id`. Pour un encaissement, l'émetteur est le client (identifiant de démonstration) et le bénéficiaire est le compte d'Awa. Argus calcule lui-même l'historique et les agrégats : on n'envoie que des champs bruts.
 - **RI-06** Réponse utilisée : `decision`, `risk_score`, `decision_reason`, `factors` (libellé, impact, rang), `model_version`. Les facteurs d'Argus remplacent nos six critères sur l'écran de Karim.
 - **RI-07** Pour qu'un montant paraisse « inhabituel », Argus a besoin d'un historique du compte : un script de graine envoie quelques transactions passées d'Awa avant la démo.
 - **RI-08** Les noms (« Koné ») sont résolus en numéros par un carnet de contacts de démo ; un contact inconnu d'Argus déclenche le critère « nouveau bénéficiaire ».
@@ -134,11 +134,15 @@ Calendrier : **mercredi soir** étapes 0 et 1. **Jeudi** étapes 2, 3, 4, puis 5
 5. **Un tunnel HTTPS** (cloudflared ou ngrok) pour le micro du téléphone et le webhook Jèko.
 6. Mettre tout cela dans `.env.local` (jamais dans git, jamais dans une conversation).
 
-## 7. Décisions à valider
+## 7. Décisions
 
-- **D1** Argus rend quatre décisions. `QUARANTINE` est traité comme `BLOCK` dans la démo (refus poli et alerte de rappel). Valider ?
-- **D2** Les encaissements ne sont pas envoyés à Argus (aucun argent ne sort). Valider ?
-- **D3** Transferts réels désactivés pour toute la démo. Valider ?
-- **D4** Les encaissements de la démo passent par le vrai Jèko. Garder « cinq mille francs » (de vrais francs entre vos propres comptes) ou prendre un petit montant pour répéter ?
-- **D5** L'écran de Karim reste le nôtre. La console d'Argus (port 5050) peut s'ajouter à côté pour montrer le score. Valider ?
-- **D6** Pour que la contrainte apparaisse aussi dans Argus (dossier de fraude), il faut un compte opérateur : option, seulement s'il reste du temps. Valider ?
+- **D1 validée** Argus rend quatre décisions. `QUARANTINE` est traité comme `BLOCK` dans la démo (refus poli et alerte de rappel).
+- **D2 validée, modifiée** Toutes les transactions (encaissements et transferts) sont envoyées à Argus pour examen.
+- **D3 validée** Transferts réels désactivés pour toute la démo.
+- **D4 ouverte** Les encaissements de la démo passent par le vrai Jèko. Garder « cinq mille francs » (de vrais francs entre vos propres comptes) ou prendre un petit montant pour répéter ?
+- **D5 validée** L'écran de Karim reste le nôtre. La console d'Argus (port 5050) peut s'ajouter à côté pour montrer le score.
+- **D6 validée (option)** Faire apparaître la contrainte aussi dans Argus (dossier de fraude) seulement s'il reste du temps.
+
+## 8. Workflow Git
+
+Une fonctionnalité, une branche `feature/*` depuis `develop`. Avant chaque fusion dans `develop` : une Pull Request, avec les tests, le typecheck et le build verts. `main` ne reçoit `develop` qu'aux jalons.
