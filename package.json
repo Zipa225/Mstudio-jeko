@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start -p 3000",
     "test": "tsx --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "argus:test": "tsx scripts/test-argus.ts",
+    "argus:seed": "tsx scripts/seed-argus.ts"
   },
   "dependencies": {
     "next": "^15.5.0",

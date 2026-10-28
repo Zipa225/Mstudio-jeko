@@ -29,7 +29,8 @@ export interface RiskSettings {
 }
 
 export interface Factor {
-  id: FactorId;
+  /** Les six critères locaux (`FactorId`), ou le nom d'une caractéristique renvoyée par Argus. */
+  id: string;
   label: string;
   points: number;
   detail: string;

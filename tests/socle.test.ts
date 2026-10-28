@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_AETHEX_BASE_URL, DEFAULT_AETHEX_VOICE_ID, loadConfig } from "../src/lib/config";
+import {
+  DEFAULT_AETHEX_BASE_URL, DEFAULT_AETHEX_VOICE_ID, DEFAULT_ARGUS_ACCOUNT_ID, DEFAULT_ARGUS_DEVICE_ID, loadConfig,
+} from "../src/lib/config";
 
 const root = join(__dirname, "..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
@@ -50,6 +52,34 @@ test("config : lit les variables renseignées", () => {
   assert.equal(c.demoMode, true);
 });
 
+test("config : Argus en mode api seulement si l'adresse ET la clé de licence sont renseignées", () => {
+  assert.equal(loadConfig({}).argus.mode, "local");
+  assert.equal(loadConfig({ ARGUS_URL: "http://localhost:4040" }).argus.mode, "local");
+  assert.equal(loadConfig({ ARGUS_LICENSE_KEY: "k" }).argus.mode, "local");
+  assert.equal(loadConfig({ ARGUS_URL: "  ", ARGUS_LICENSE_KEY: "k" }).argus.mode, "local");
+
+  const on = loadConfig({ ARGUS_URL: " http://localhost:4040 ", ARGUS_LICENSE_KEY: " k " }).argus;
+  assert.deepEqual([on.mode, on.url, on.licenseKey], ["api", "http://localhost:4040", "k"]);
+
+  for (const mode of ["local", "LOCAL", " Local "]) {
+    assert.equal(loadConfig({ ARGUS_URL: "http://x", ARGUS_LICENSE_KEY: "k", ARGUS_MODE: mode }).argus.mode, "local", mode);
+  }
+  assert.equal(loadConfig({ ARGUS_URL: "http://x", ARGUS_LICENSE_KEY: "k", ARGUS_MODE: "api" }).argus.mode, "api");
+});
+
+test("config : comptes, appareil et délai d'Argus ont des valeurs par défaut et un délai borné", () => {
+  const d = loadConfig({}).argus;
+  assert.deepEqual([d.senderAccountId, d.deviceId, d.timeoutMs], [DEFAULT_ARGUS_ACCOUNT_ID, DEFAULT_ARGUS_DEVICE_ID, 2000]);
+  const custom = loadConfig({ ARGUS_ACCOUNT_ID: "mon-compte", ARGUS_DEVICE_ID: "mon-appareil" }).argus;
+  assert.deepEqual([custom.senderAccountId, custom.deviceId], ["mon-compte", "mon-appareil"]);
+  const timeout = (v: string) => loadConfig({ ARGUS_TIMEOUT_MS: v }).argus.timeoutMs;
+  assert.equal(timeout("1500"), 1500);
+  assert.equal(timeout("50"), 200, "trop court : borné");
+  assert.equal(timeout("99999"), 10_000, "trop long : borné");
+  assert.equal(timeout("abc"), 2000);
+  assert.equal(timeout(""), 2000);
+});
+
 test("dépôt : .env.local est ignoré par git", () => {
   const lines = read(".gitignore").split(/\r?\n/).map((l) => l.trim());
   assert.ok(lines.includes(".env.local"), ".env.local doit figurer dans .gitignore");
@@ -69,6 +99,8 @@ test("dépôt : le modèle .env.local.example ne contient aucun secret", () => {
   assert.equal(values.AETHEX_API_KEY, "", "pas de clé AethexAI");
   assert.equal(values.DURESS_PHRASE, "", "pas de phrase de contrainte dans git");
   assert.equal(values.JEKO_WEBHOOK_SECRET, "", "pas de clé de signature");
+  assert.equal(values.ARGUS_LICENSE_KEY, "", "pas de clé de licence Argus");
+  assert.equal(values.ARGUS_URL, "", "pas d'adresse d'Argus imposée");
   assert.ok(!/ae_live_[A-Za-z0-9]/.test(read(".env.local.example")), "aucune vraie clé");
 });
 

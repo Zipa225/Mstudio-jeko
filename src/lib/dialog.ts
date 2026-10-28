@@ -1,14 +1,18 @@
 // Le dialogue du marchand : une phrase entre, une réponse sort.
-// Flux : intention, montant et bénéficiaire, score Argus, relecture et confirmation, exécution.
+// Flux : intention, montant et bénéficiaire, examen du risque (Argus), relecture et confirmation, exécution.
 // Règle d'or : aucune opération d'argent sans relecture du montant ET « oui » explicite du marchand.
+//
+// Le moteur de risque peut être local (synchrone) ou l'API Argus (par le réseau, donc asynchrone). Le dialogue est
+// synchrone avec le moteur local, et asynchrone avec Argus : `createDialog` le dit dans son type. En mode asynchrone,
+// les tours d'une même session passent l'un après l'autre : un « oui » n'est jamais traité avant la fin de l'examen.
 
 import { getConfig } from "./config";
 import { parseAmount, toFrenchWords } from "./frenchNumbers";
 import {
   extractBeneficiary, extractPhone, extractWallet, formatPhone, isNo, isYes, parseIntent, WALLET_LABEL, type Intent, type Wallet,
 } from "./intent";
-import type { Cashier } from "./ports";
-import { scoreRisk, type FactorId, type RiskResult } from "./risk";
+import type { AsyncRisk, Cashier, RiskAssessment, RiskRequest, SyncRisk } from "./ports";
+import { createLocalRisk } from "./riskLocal";
 import type { Operation, Pending, Session, Store } from "./store";
 import { formatXof } from "./text";
 
@@ -37,14 +41,37 @@ export interface DialogDeps {
   store: Store;
   cashier: Cashier;
   guard?: TurnGuard;
+  /** Moteur de risque. Par défaut : le calcul local. */
+  risk?: SyncRisk | AsyncRisk;
 }
 
-export interface Dialog {
+export interface SyncDialog {
   handleTurn(sessionId: string, text: string): TurnResult;
 }
 
+export interface AsyncDialog {
+  handleTurn(sessionId: string, text: string): Promise<TurnResult>;
+}
+
+/** Un dialogue dont on ne sait pas s'il est synchrone : les routes attendent le résultat dans les deux cas. */
+export interface AnyDialog {
+  handleTurn(sessionId: string, text: string): TurnResult | Promise<TurnResult>;
+}
+
+export type Dialog = AnyDialog;
+
 /** Plus petit montant accepté (minimum Mobile Money de Jèko, d'après le guide). */
 export const MIN_AMOUNT = 5;
+
+type Maybe<T> = T | Promise<T>;
+
+const isThenable = (value: unknown): value is Promise<unknown> =>
+  typeof (value as { then?: unknown } | null | undefined)?.then === "function";
+
+/** Applique `next` au résultat, tout de suite s'il est déjà là, ou une fois qu'il arrive. */
+function chain<T, U>(value: Maybe<T>, next: (v: T) => Maybe<U>): Maybe<U> {
+  return isThenable(value) ? (value as Promise<T>).then(next) : next(value as T);
+}
 
 // ---------------------------------------------------------------------------
 // Construction des réponses : le montant s'écrit en chiffres à l'écran et en lettres à la voix.
@@ -84,7 +111,7 @@ const turn = (l: Line, awaitingConfirm = false, payment?: TurnResult["payment"],
 const plain = (text: string, awaitingConfirm = false, tone?: Tone) =>
   turn({ reply: text, speech: text }, awaitingConfirm, undefined, tone);
 
-const REASON: Partial<Record<FactorId, string>> = {
+const REASON: Record<string, string> = {
   new_beneficiary: "c'est un nouveau numéro pour toi",
   amount_ratio: "c'est beaucoup plus que d'habitude",
   ceiling: "ça dépasse ton plafond",
@@ -92,14 +119,16 @@ const REASON: Partial<Record<FactorId, string>> = {
   velocity: "il y a eu plusieurs opérations en peu de temps",
 };
 
-/** Les deux raisons les plus lourdes, dites à voix haute avant de demander le oui. */
-function spokenReason(risk: RiskResult): string {
-  const parts = risk.factors
+/** La raison du doute, dite à voix haute avant de demander le oui : celle d'Argus si elle existe, sinon les deux plus lourdes. */
+function spokenReason(a: RiskAssessment): string {
+  const reason = a.decisionReason?.trim();
+  if (reason) return /[.!?]$/.test(reason) ? reason : `${reason}.`;
+  const parts = a.factors
     .filter((f) => f.id !== "outbound")
-    .sort((a, b) => b.points - a.points)
+    .sort((x, y) => y.points - x.points)
     .slice(0, 2)
-    .map((f) => REASON[f.id])
-    .filter((r): r is string => Boolean(r));
+    .map((f) => REASON[f.id] ?? f.label.toLowerCase())
+    .filter(Boolean);
   if (!parts.length) return "Je préfère vérifier avec toi.";
   const sentence = parts.join(" et ");
   return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
@@ -132,8 +161,12 @@ export function paymentReceivedTurn(op: Operation): TurnResult {
 
 // ---------------------------------------------------------------------------
 
-export function createDialog(deps: DialogDeps): Dialog {
+export function createDialog(deps: Omit<DialogDeps, "risk"> & { risk?: SyncRisk }): SyncDialog;
+export function createDialog(deps: Omit<DialogDeps, "risk"> & { risk: AsyncRisk }): AsyncDialog;
+export function createDialog(deps: DialogDeps): AnyDialog;
+export function createDialog(deps: DialogDeps): AnyDialog {
   const { store, cashier } = deps;
+  const risk: SyncRisk | AsyncRisk = deps.risk ?? createLocalRisk();
 
   const clear = (s: Session) => {
     s.pending = undefined;
@@ -145,7 +178,7 @@ export function createDialog(deps: DialogDeps): Dialog {
 
   // --- Début d'une commande -------------------------------------------------
 
-  function startCommand(s: Session, intent: Intent): TurnResult {
+  function startCommand(s: Session, intent: Intent): Maybe<TurnResult> {
     const p: Pending = {
       stage: "need_amount",
       kind: intent.kind === "send" ? "send" : "collect",
@@ -157,7 +190,7 @@ export function createDialog(deps: DialogDeps): Dialog {
     return advance(s, p);
   }
 
-  function advance(s: Session, p: Pending): TurnResult {
+  function advance(s: Session, p: Pending): Maybe<TurnResult> {
     if (p.amount === undefined) {
       p.stage = "need_amount";
       s.pending = p;
@@ -177,9 +210,9 @@ export function createDialog(deps: DialogDeps): Dialog {
     return evaluate(s, p);
   }
 
-  // --- Évaluation par Argus, puis relecture ---------------------------------
+  // --- Examen par le moteur de risque, puis relecture -----------------------
 
-  function evaluate(s: Session, p: Pending): TurnResult {
+  function evaluate(s: Session, p: Pending): Maybe<TurnResult> {
     const amount = p.amount as number;
     const config = getConfig();
     const now = store.now();
@@ -189,31 +222,37 @@ export function createDialog(deps: DialogDeps): Dialog {
       return turn(line`Ce montant dépasse ton plafond de ${amt(config.ceilingXof)} francs. Un conseiller Jèko peut t'expliquer comment le relever.`, false, undefined, "refusal");
     }
 
-    const risk = scoreRisk(
-      {
-        kind: p.kind,
-        amount,
-        beneficiaryKnown: p.kind === "send" ? store.isKnownContact({ name: p.beneficiary, phone: p.phone }) : true,
-        avgTicket: store.avgTicket(),
-        previousOps: store.previousOps(now),
-        now,
-      },
-      config,
-    );
+    const request: RiskRequest = {
+      kind: p.kind,
+      amount,
+      beneficiaryAccount: store.accountFor({ name: p.beneficiary, phone: p.phone }),
+      beneficiaryKnown: p.kind === "send" ? store.isKnownContact({ name: p.beneficiary, phone: p.phone }) : true,
+      avgTicket: store.avgTicket(),
+      previousOps: store.previousOps(now),
+      now,
+    };
+    return chain<RiskAssessment, TurnResult>(risk.assess(request), (assessment) => conclude(s, p, assessment));
+  }
 
+  /** La suite de l'examen : refuser, ou relire le montant et demander confirmation. */
+  function conclude(s: Session, p: Pending, a: RiskAssessment): TurnResult {
+    const amount = p.amount as number;
     const base = {
       kind: p.kind,
       amount,
       wallet: p.wallet,
       beneficiary: p.beneficiary,
       phone: p.phone,
-      score: risk.score,
-      decision: risk.decision,
-      factors: risk.factors,
+      score: a.score,
+      decision: a.decision,
+      factors: a.factors,
       verifiedByVoice: false,
+      riskSource: a.source,
+      ...(a.modelVersion ? { modelVersion: a.modelVersion } : {}),
+      ...(a.degraded ? { degraded: true } : {}),
     };
 
-    if (risk.decision === "block") {
+    if (a.decision === "block") {
       const op = store.addOperation({ ...base, status: "blocked" });
       store.addAlert({
         level: "warning",
@@ -221,8 +260,8 @@ export function createDialog(deps: DialogDeps): Dialog {
         title: "Opération bloquée : rappel à faire",
         detail: `${p.kind === "send" ? "Transfert" : "Encaissement"} de ${formatXof(amount)} FCFA${p.kind === "send" ? ` vers ${who(p)}` : ""} refusé. Un conseiller doit rappeler le marchand.`,
         operationId: op.id,
-        score: risk.score,
-        factors: risk.factors,
+        score: a.score,
+        factors: a.factors,
       });
       clear(s);
       return plain("Je ne peux pas faire ça maintenant, pour ta sécurité. Un conseiller Jèko va te rappeler.", false, "refusal");
@@ -233,12 +272,12 @@ export function createDialog(deps: DialogDeps): Dialog {
     p.operationId = op.id;
     s.pending = p;
 
-    const lead = risk.decision === "verify" ? `Attention. ${spokenReason(risk)} ` : "";
-    const tone: Tone = risk.decision === "verify" ? "verify" : "ask";
+    const lead = a.decision === "verify" ? `Attention. ${spokenReason(a)} ` : "";
+    const tone: Tone = a.decision === "verify" ? "verify" : "ask";
     if (p.kind === "collect") {
       return turn(line`${lead}Tu veux encaisser ${amt(amount)} francs${via(p.wallet)}. Tu confirmes ?`, true, undefined, tone);
     }
-    const ask = risk.decision === "verify" ? "C'est bien toi qui décides ?" : "Tu confirmes ?";
+    const ask = a.decision === "verify" ? "C'est bien toi qui décides ?" : "Tu confirmes ?";
     return turn(line`${lead}Tu envoies ${amt(amount)} francs${via(p.wallet)} à ${who(p)}. ${ask}`, true, undefined, tone);
   }
 
@@ -287,7 +326,7 @@ export function createDialog(deps: DialogDeps): Dialog {
 
   // --- Les trois situations d'une session ------------------------------------
 
-  function handleConfirm(s: Session, p: Pending, text: string): TurnResult {
+  function handleConfirm(s: Session, p: Pending, text: string): Maybe<TurnResult> {
     const op = store.getOperation(p.operationId);
     if (!op) {
       clear(s);
@@ -315,7 +354,7 @@ export function createDialog(deps: DialogDeps): Dialog {
     return plain(ASK_YES_NO, true);
   }
 
-  function handleMissing(s: Session, p: Pending, text: string): TurnResult {
+  function handleMissing(s: Session, p: Pending, text: string): Maybe<TurnResult> {
     const intent = parseIntent(text);
     if (intent.kind === "collect" || intent.kind === "send") return startCommand(s, intent);
 
@@ -340,7 +379,7 @@ export function createDialog(deps: DialogDeps): Dialog {
     return advance(s, p);
   }
 
-  function handleIdle(s: Session, text: string): TurnResult {
+  function handleIdle(s: Session, text: string): Maybe<TurnResult> {
     const intent = parseIntent(text);
     switch (intent.kind) {
       case "collect":
@@ -360,20 +399,39 @@ export function createDialog(deps: DialogDeps): Dialog {
     }
   }
 
+  function runTurn(sessionId: string, rawText: string): Maybe<TurnResult> {
+    const s = store.getSession(sessionId);
+    const text = rawText.trim();
+    if (!text) return plain("Je n'ai pas entendu. Tu peux répéter ?", s.pending?.stage === "confirm");
+    const awaiting = s.pending?.stage === "confirm" ? store.getOperation(s.pending.operationId) : undefined;
+    const guarded = deps.guard?.(text, awaiting);
+    if (guarded) {
+      clear(s);
+      return guarded;
+    }
+    if (s.pending?.stage === "confirm") return handleConfirm(s, s.pending, text);
+    if (s.pending) return handleMissing(s, s.pending, text);
+    return handleIdle(s, text);
+  }
+
+  // Avec Argus, les tours d'une même session s'enchaînent : le suivant attend la fin du précédent.
+  const isAsync = risk.async === true;
+  const tails = new Map<string, Promise<void>>();
+
   return {
-    handleTurn(sessionId: string, rawText: string): TurnResult {
-      const s = store.getSession(sessionId);
-      const text = rawText.trim();
-      if (!text) return plain("Je n'ai pas entendu. Tu peux répéter ?", s.pending?.stage === "confirm");
-      const awaiting = s.pending?.stage === "confirm" ? store.getOperation(s.pending.operationId) : undefined;
-      const guarded = deps.guard?.(text, awaiting);
-      if (guarded) {
-        clear(s);
-        return guarded;
-      }
-      if (s.pending?.stage === "confirm") return handleConfirm(s, s.pending, text);
-      if (s.pending) return handleMissing(s, s.pending, text);
-      return handleIdle(s, text);
+    handleTurn(sessionId: string, rawText: string): TurnResult | Promise<TurnResult> {
+      if (!isAsync) return runTurn(sessionId, rawText) as TurnResult;
+      const previous = tails.get(sessionId) ?? Promise.resolve();
+      const result = previous.then(() => runTurn(sessionId, rawText));
+      const settled = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      tails.set(sessionId, settled);
+      void settled.then(() => {
+        if (tails.get(sessionId) === settled) tails.delete(sessionId);
+      });
+      return result;
     },
   };
 }
