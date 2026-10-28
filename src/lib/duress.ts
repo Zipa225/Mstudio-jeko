@@ -41,6 +41,8 @@ const label = (op: Operation) => op.beneficiary ?? (op.phone ? formatPhone(op.ph
 export function createDuressGuard(
   store: Store,
   getPhrase: () => string | undefined = () => getConfig().duressPhrase,
+  /** Lien factice de même forme qu'un vrai lien de paiement (caisse réelle), pour que la réponse reste identique. */
+  decoyPayUrl?: (id: string) => string | undefined,
 ): TurnGuard {
   return (text: string, op: Operation | undefined): TurnResult | undefined => {
     if (!heard(text, getPhrase())) return undefined;
@@ -72,6 +74,8 @@ export function createDuressGuard(
       factors: op.factors,
     });
     // Un encaissement normal renvoie un identifiant de paiement : on en fournit un fictif pour que la réponse soit identique.
-    return successTurn(op, op.kind === "collect" ? `pr_${randomUUID().slice(0, 8)}` : undefined);
+    if (op.kind !== "collect") return successTurn(op);
+    const fakeId = `pr_${randomUUID().slice(0, 8)}`;
+    return successTurn(op, fakeId, decoyPayUrl?.(fakeId));
   };
 }

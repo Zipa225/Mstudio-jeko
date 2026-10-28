@@ -4,11 +4,29 @@
 import type { Wallet } from "./intent";
 import type { Decision, Factor } from "./risk";
 
+/** Une demande de paiement lancée : `id` est notre référence (celle que le webhook ramène), `payUrl` le lien du client. */
+export interface PaymentLaunch {
+  id: string;
+  payUrl?: string;
+}
+
+/** La caisse, quand elle répond tout de suite (fausse caisse). */
 export interface Cashier {
+  readonly async?: false;
   /** Lance une demande de paiement (encaissement). Le montant est en FCFA. */
-  createPaymentRequest(args: { amount: number; wallet?: Wallet }): { id: string };
+  createPaymentRequest(args: { amount: number; wallet?: Wallet }): PaymentLaunch;
   /** Lance un transfert sortant. Le montant est en FCFA. */
   createTransfer(args: { amount: number; to: string }): { id: string };
+  /** Un lien de même forme qu'un vrai, pour la réponse sous contrainte (qui doit ressembler à un succès). */
+  decoyPayUrl?(id: string): string | undefined;
+}
+
+/** La caisse, quand elle répond par le réseau : l'API Jèko. */
+export interface AsyncCashier {
+  readonly async: true;
+  createPaymentRequest(args: { amount: number; wallet?: Wallet }): Promise<PaymentLaunch>;
+  createTransfer(args: { amount: number; to: string }): Promise<{ id: string }>;
+  decoyPayUrl?(id: string): string | undefined;
 }
 
 /** La voix : transcrire ce que dit la vendeuse, et lui répondre à voix haute. */

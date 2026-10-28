@@ -42,8 +42,25 @@ export const screenKind = (r: Pick<TurnResult, "tone" | "awaitingConfirm"> | und
 export const showConfirmButtons = (r: Pick<TurnResult, "awaitingConfirm"> | undefined): boolean => r?.awaitingConfirm === true;
 
 /** Le bouton « le client a payé » (simulation) n'existe qu'en démonstration, après le lancement d'un encaissement. */
-export const canSimulateClientPayment = (r: Pick<TurnResult, "payment"> | undefined, demoMode: boolean): boolean =>
-  demoMode && Boolean(r?.payment?.id);
+export const canSimulateClientPayment = (r: Pick<TurnResult, "payment"> | undefined, demoMode: boolean, jekoLive = false): boolean =>
+  demoMode && !jekoLive && Boolean(r?.payment?.id);
+
+/** Le lien de paiement du client, seulement s'il est en https (la page ne suit jamais un autre schéma). */
+export function payLink(r: Pick<TurnResult, "payment"> | undefined): string | undefined {
+  const url = r?.payment?.url;
+  if (!url) return undefined;
+  try {
+    return new URL(url).protocol === "https:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Avec la vraie caisse, la page attend le webhook de Jèko : elle demande où en est le paiement toutes les 2 s, 10 min au plus. */
+export const PAYMENT_POLL_MS = 2000;
+export const PAYMENT_POLL_MAX_MS = 10 * 60_000;
+
+export const jekoModeFrom = (health: { jeko?: unknown } | undefined): "live" | "mock" => (health?.jeko === "live" ? "live" : "mock");
 
 /** `?test=1` : mode clavier, sans micro. */
 export const isTestMode = (search: string): boolean => new URLSearchParams(search).get("test") === "1";

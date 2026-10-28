@@ -21,6 +21,21 @@ export interface ArgusConfig {
   timeoutMs: number;
 }
 
+export const DEFAULT_JEKO_BASE_URL = "https://api.jeko.africa";
+export const DEFAULT_PUBLIC_BASE_URL = "http://localhost:3000";
+
+export interface JekoConfig {
+  /** `live` seulement si JEKO_MODE=live ET clé, identifiant de clé et boutique sont renseignés. Sinon : fausse caisse. */
+  mode: "live" | "mock";
+  baseUrl: string;
+  apiKey: string | undefined;
+  apiKeyId: string | undefined;
+  storeId: string | undefined;
+  /** Adresse publique de l'application : retour du client après paiement. */
+  publicBaseUrl: string;
+  timeoutMs: number;
+}
+
 export interface AppConfig {
   aethex: {
     apiKey: string | undefined;
@@ -33,6 +48,7 @@ export interface AppConfig {
   /** undefined : la fausse caisse génère une clé aléatoire au démarrage. */
   jekoWebhookSecret: string | undefined;
   argus: ArgusConfig;
+  jeko: JekoConfig;
   demoMode: boolean;
   /** Plafond issu des notes des ingénieurs Jèko (à confirmer : par transaction ou cumulé ?). */
   ceilingXof: number;
@@ -52,6 +68,10 @@ export function loadConfig(env: Env = process.env): AppConfig {
   const argusUrl = clean(env.ARGUS_URL);
   const argusKey = clean(env.ARGUS_LICENSE_KEY);
   const argusTimeout = Number.parseInt(env.ARGUS_TIMEOUT_MS ?? "", 10);
+  const jekoKey = clean(env.JEKO_API_KEY);
+  const jekoKeyId = clean(env.JEKO_API_KEY_ID);
+  const jekoStore = clean(env.JEKO_STORE_ID);
+  const jekoTimeout = Number.parseInt(env.JEKO_TIMEOUT_MS ?? "", 10);
   return {
     aethex: {
       apiKey,
@@ -68,6 +88,15 @@ export function loadConfig(env: Env = process.env): AppConfig {
       senderAccountId: clean(env.ARGUS_ACCOUNT_ID) ?? DEFAULT_ARGUS_ACCOUNT_ID,
       deviceId: clean(env.ARGUS_DEVICE_ID) ?? DEFAULT_ARGUS_DEVICE_ID,
       timeoutMs: Number.isFinite(argusTimeout) ? Math.min(10_000, Math.max(200, argusTimeout)) : DEFAULT_ARGUS_TIMEOUT_MS,
+    },
+    jeko: {
+      mode: clean(env.JEKO_MODE)?.toLowerCase() === "live" && jekoKey && jekoKeyId && jekoStore ? "live" : "mock",
+      baseUrl: clean(env.JEKO_BASE_URL) ?? DEFAULT_JEKO_BASE_URL,
+      apiKey: jekoKey,
+      apiKeyId: jekoKeyId,
+      storeId: jekoStore,
+      publicBaseUrl: clean(env.PUBLIC_BASE_URL) ?? DEFAULT_PUBLIC_BASE_URL,
+      timeoutMs: Number.isFinite(jekoTimeout) ? Math.min(20_000, Math.max(500, jekoTimeout)) : 8000,
     },
     demoMode: env.DEMO_MODE === "1",
     ceilingXof: 200_000,
