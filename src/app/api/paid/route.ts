@@ -31,6 +31,7 @@ export async function POST(req: Request) {
     const outcome = rt.receive(delivery);
     if (!outcome.ok) return json({ error: outcome.reason }, outcome.status);
     if (!outcome.announcement) return json({ ok: true, duplicate: true });
+    rt.allowSpeech(outcome.announcement.speech);
     return json({ ok: true, ...outcome.announcement });
   });
 }

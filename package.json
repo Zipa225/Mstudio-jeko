@@ -9,6 +9,8 @@
     "start": "next start -p 3000",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
+    "aethex:test": "tsx scripts/test-aethex.ts",
+    "aethex:voices": "tsx scripts/test-aethex.ts --voices",
     "argus:test": "tsx scripts/test-argus.ts",
     "argus:seed": "tsx scripts/seed-argus.ts"
   },

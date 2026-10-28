@@ -186,7 +186,7 @@ test("health : dit ce qui est configuré, jamais les valeurs", async () => {
   try {
     fresh();
     const h = await read(await health());
-    assert.deepEqual(h.body, { ok: true, aethex: true, duress: "active", argus: "local", demoMode: true });
+    assert.deepEqual(h.body, { ok: true, aethex: true, duress: "active", argus: "local", voice: "aethex", demoMode: true });
     assert.ok(!h.raw.includes("ae_live_valeur_secrete_de_test"));
     assert.equal(leaks(h.raw), false);
 
