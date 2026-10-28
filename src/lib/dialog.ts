@@ -117,6 +117,11 @@ export function successTurn(op: Operation, paymentId = ""): TurnResult {
 const NOTHING_TO_CONFIRM = "Il n'y a rien à confirmer pour le moment.";
 const ASK_YES_NO = "Dis oui pour confirmer, ou non pour annuler.";
 
+/** L'annonce vocale de la JèkoBox, dite seulement après vérification du webhook de paiement. */
+export function paymentReceivedTurn(op: Operation): TurnResult {
+  return turn(line`Paiement reçu. ${amt(op.amount)} francs${via(op.wallet)}.`);
+}
+
 // ---------------------------------------------------------------------------
 
 export function createDialog(deps: DialogDeps): Dialog {
