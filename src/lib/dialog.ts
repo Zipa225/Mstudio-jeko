@@ -12,12 +12,17 @@ import { scoreRisk, type FactorId, type RiskResult } from "./risk";
 import type { Operation, Pending, Session, Store } from "./store";
 import { formatXof } from "./text";
 
+/** Nature d'une réponse, pour que l'écran choisisse son apparence sans deviner d'après le texte. */
+export type Tone = "ask" | "verify" | "success" | "refusal" | "info";
+
 export interface TurnResult {
   /** Texte affiché (montants en chiffres). */
   reply: string;
   /** Texte prononcé (montants en lettres). */
   speech: string;
   awaitingConfirm: boolean;
+  /** `ask` : confirmation simple. `verify` : doute d'Argus. `success` : fait. `refusal` : refus. `info` : le reste. */
+  tone?: Tone;
   payment?: { id: string; amount: number; wallet?: Wallet };
 }
 
@@ -68,13 +73,16 @@ function line(strings: TemplateStringsArray, ...values: Array<string | Amount>):
   return { reply, speech };
 }
 
-const turn = (l: Line, awaitingConfirm = false, payment?: TurnResult["payment"]): TurnResult => {
-  const result: TurnResult = { reply: l.reply, speech: l.speech, awaitingConfirm };
+const turn = (l: Line, awaitingConfirm = false, payment?: TurnResult["payment"], tone?: Tone): TurnResult => {
+  const result: TurnResult = {
+    reply: l.reply, speech: l.speech, awaitingConfirm, tone: tone ?? (awaitingConfirm ? "ask" : "info"),
+  };
   if (payment) result.payment = payment;
   return result;
 };
 
-const plain = (text: string, awaitingConfirm = false) => turn({ reply: text, speech: text }, awaitingConfirm);
+const plain = (text: string, awaitingConfirm = false, tone?: Tone) =>
+  turn({ reply: text, speech: text }, awaitingConfirm, undefined, tone);
 
 const REASON: Partial<Record<FactorId, string>> = {
   new_beneficiary: "c'est un nouveau numéro pour toi",
@@ -109,9 +117,9 @@ export function successTurn(op: Operation, paymentId = ""): TurnResult {
     const payment = op.wallet
       ? { id: paymentId, amount: op.amount, wallet: op.wallet }
       : { id: paymentId, amount: op.amount };
-    return turn(line`C'est lancé. Le client peut scanner et payer.`, false, payment);
+    return turn(line`C'est lancé. Le client peut scanner et payer.`, false, payment, "success");
   }
-  return turn(line`C'est envoyé. ${amt(op.amount)} francs à ${who(op)}.`);
+  return turn(line`C'est envoyé. ${amt(op.amount)} francs à ${who(op)}.`, false, undefined, "success");
 }
 
 const NOTHING_TO_CONFIRM = "Il n'y a rien à confirmer pour le moment.";
@@ -119,7 +127,7 @@ const ASK_YES_NO = "Dis oui pour confirmer, ou non pour annuler.";
 
 /** L'annonce vocale de la JèkoBox, dite seulement après vérification du webhook de paiement. */
 export function paymentReceivedTurn(op: Operation): TurnResult {
-  return turn(line`Paiement reçu. ${amt(op.amount)} francs${via(op.wallet)}.`);
+  return turn(line`Paiement reçu. ${amt(op.amount)} francs${via(op.wallet)}.`, false, undefined, "success");
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +186,7 @@ export function createDialog(deps: DialogDeps): Dialog {
 
     if (p.kind === "collect" && amount > config.ceilingXof) {
       clear(s);
-      return turn(line`Ce montant dépasse ton plafond de ${amt(config.ceilingXof)} francs. Un conseiller Jèko peut t'expliquer comment le relever.`);
+      return turn(line`Ce montant dépasse ton plafond de ${amt(config.ceilingXof)} francs. Un conseiller Jèko peut t'expliquer comment le relever.`, false, undefined, "refusal");
     }
 
     const risk = scoreRisk(
@@ -217,7 +225,7 @@ export function createDialog(deps: DialogDeps): Dialog {
         factors: risk.factors,
       });
       clear(s);
-      return plain("Je ne peux pas faire ça maintenant, pour ta sécurité. Un conseiller Jèko va te rappeler.");
+      return plain("Je ne peux pas faire ça maintenant, pour ta sécurité. Un conseiller Jèko va te rappeler.", false, "refusal");
     }
 
     const op = store.addOperation({ ...base, status: "to_confirm" });
@@ -226,9 +234,12 @@ export function createDialog(deps: DialogDeps): Dialog {
     s.pending = p;
 
     const lead = risk.decision === "verify" ? `Attention. ${spokenReason(risk)} ` : "";
-    if (p.kind === "collect") return turn(line`${lead}Tu veux encaisser ${amt(amount)} francs${via(p.wallet)}. Tu confirmes ?`, true);
+    const tone: Tone = risk.decision === "verify" ? "verify" : "ask";
+    if (p.kind === "collect") {
+      return turn(line`${lead}Tu veux encaisser ${amt(amount)} francs${via(p.wallet)}. Tu confirmes ?`, true, undefined, tone);
+    }
     const ask = risk.decision === "verify" ? "C'est bien toi qui décides ?" : "Tu confirmes ?";
-    return turn(line`${lead}Tu envoies ${amt(amount)} francs${via(p.wallet)} à ${who(p)}. ${ask}`, true);
+    return turn(line`${lead}Tu envoies ${amt(amount)} francs${via(p.wallet)} à ${who(p)}. ${ask}`, true, undefined, tone);
   }
 
   // --- Exécution : seulement après un oui ------------------------------------
@@ -255,7 +266,7 @@ export function createDialog(deps: DialogDeps): Dialog {
         score: op.score,
         factors: op.factors,
       });
-      return plain("Je n'ai pas pu faire l'opération. Réessaie dans un instant.");
+      return plain("Je n'ai pas pu faire l'opération. Réessaie dans un instant.", false, "refusal");
     }
 
     const verified = op.decision === "verify";
