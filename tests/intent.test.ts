@@ -91,6 +91,8 @@ test("moyens de paiement reconnus", () => {
   assert.equal(extractWallet("Orange Money"), "orange");
   assert.equal(extractWallet("avec MTN"), "mtn");
   assert.equal(extractWallet("sur Moov"), "moov");
+  for (const heard of ["par WAF", "par wav", "par ouave"]) assert.equal(extractWallet(heard), "wave", heard);
+  assert.equal(extractWallet("Tu veux encaisser 5000 francs par WAF, tu confirmes?"), "wave");
   assert.equal(extractWallet("en espèces"), undefined);
   assert.equal(extractWallet("par momo"), undefined, "MoMo n'est pas dans le guide : non reconnu");
   assert.deepEqual(WALLET_LABEL, { wave: "Wave", orange: "Orange", mtn: "MTN", moov: "Moov" });

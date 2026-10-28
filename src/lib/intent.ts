@@ -25,9 +25,13 @@ export interface Intent {
 // Moyen de paiement, téléphone
 // ---------------------------------------------------------------------------
 
+/** Façons dont la reconnaissance vocale écrit « Wave » (AethexAI a rendu « WAF » lors d'un essai réel). */
+const WAVE_MISHEARD = new Set(["waf", "wav", "waive", "ouave", "ouaive", "weave"]);
+
 export function extractWallet(text: string): Wallet | undefined {
   for (const t of tokens(text)) {
     if (t === "wave" || t === "orange" || t === "mtn" || t === "moov") return t;
+    if (WAVE_MISHEARD.has(t)) return "wave";
   }
   return undefined;
 }
