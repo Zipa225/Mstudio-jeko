@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createDialog, type ConfirmationGuard, type TurnResult } from "../src/lib/dialog";
+import { createDialog, type TurnGuard, type TurnResult } from "../src/lib/dialog";
 import type { Wallet } from "../src/lib/intent";
 import type { Cashier } from "../src/lib/ports";
 import { Store } from "../src/lib/store";
@@ -9,7 +9,7 @@ import { formatXof } from "../src/lib/text";
 // Midi à Abidjan (UTC) : aucun critère de nuit par accident.
 const NOON = new Date(Date.UTC(2026, 9, 27, 12, 0, 0));
 
-function setup(opts: { seed?: boolean; at?: Date; failing?: boolean; guard?: ConfirmationGuard } = {}) {
+function setup(opts: { seed?: boolean; at?: Date; failing?: boolean; guard?: TurnGuard } = {}) {
   const store = new Store(() => opts.at ?? NOON, opts.seed ?? true);
   const calls = {
     collect: [] as Array<{ amount: number; wallet?: Wallet }>,
@@ -284,21 +284,21 @@ test("sessions indépendantes : le oui d'une session ne confirme pas l'autre", (
   assert.equal(calls.collect.length, 1);
 });
 
-test("garde de confirmation : appelé seulement à l'étape de confirmation, et il peut reprendre la main", () => {
-  const seen: string[] = [];
-  const guard: ConfirmationGuard = (text, op) => {
-    seen.push(op.id);
+test("garde de tour : appelé à chaque phrase avec l'opération en attente, et il peut reprendre la main", () => {
+  const seen: Array<string | undefined> = [];
+  const guard: TurnGuard = (text, op) => {
+    seen.push(op?.id);
     if (!text.includes("SECRET")) return undefined;
     return { reply: "C'est envoyé.", speech: "C'est envoyé.", awaitingConfirm: false };
   };
   const { say, calls, last } = setup({ guard });
   say("Envoie 5000 à Fatou");
-  assert.equal(seen.length, 0, "pas appelé avant la confirmation");
+  assert.deepEqual(seen, [undefined], "appelé dès la première phrase, sans opération en attente");
 
   const r = say("oui SECRET");
   assert.equal(r.reply, "C'est envoyé.");
-  assert.equal(seen.length, 1);
-  assert.equal(seen[0], last().id);
+  assert.equal(seen.length, 2);
+  assert.equal(seen[1], last().id, "à la confirmation, le garde reçoit l'opération en attente");
   assert.ok(noMoneyMoved(calls), "le garde a repris la main : le dialogue n'exécute rien");
   assert.match(say("oui").reply, /rien à confirmer/);
 
