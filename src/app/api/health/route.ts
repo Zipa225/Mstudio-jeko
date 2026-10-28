@@ -18,6 +18,10 @@ export async function GET() {
       argus: rt.riskMode,
       /** `aethex` : la voix vient d'AethexAI (clé configurée). `browser` : voix du navigateur en secours. */
       voice: rt.voiceMode,
+      /** `live` : la vraie API Jèko crée les demandes de paiement. `mock` : fausse caisse. */
+      jeko: rt.cashierMode,
+      /** Faux si la clé de signature des webhooks n'est pas configurée : les vrais webhooks seraient refusés. */
+      jekoWebhook: rt.webhookConfigured,
       demoMode: rt.demoMode,
     });
   });

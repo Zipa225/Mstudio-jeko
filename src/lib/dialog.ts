@@ -11,7 +11,7 @@ import { parseAmount, toFrenchWords } from "./frenchNumbers";
 import {
   extractBeneficiary, extractPhone, extractWallet, formatPhone, isNo, isYes, parseIntent, WALLET_LABEL, type Intent, type Wallet,
 } from "./intent";
-import type { AsyncRisk, Cashier, RiskAssessment, RiskRequest, SyncRisk } from "./ports";
+import type { AsyncCashier, AsyncRisk, Cashier, RiskAssessment, RiskRequest, SyncRisk } from "./ports";
 import { createLocalRisk } from "./riskLocal";
 import type { Operation, Pending, Session, Store } from "./store";
 import { formatXof } from "./text";
@@ -27,7 +27,8 @@ export interface TurnResult {
   awaitingConfirm: boolean;
   /** `ask` : confirmation simple. `verify` : doute d'Argus. `success` : fait. `refusal` : refus. `info` : le reste. */
   tone?: Tone;
-  payment?: { id: string; amount: number; wallet?: Wallet };
+  /** `url` : le lien de paiement du client (caisse réelle). */
+  payment?: { id: string; amount: number; wallet?: Wallet; url?: string };
 }
 
 /**
@@ -39,7 +40,7 @@ export type TurnGuard = (text: string, operation: Operation | undefined) => Turn
 
 export interface DialogDeps {
   store: Store;
-  cashier: Cashier;
+  cashier: Cashier | AsyncCashier;
   guard?: TurnGuard;
   /** Moteur de risque. Par défaut : le calcul local. */
   risk?: SyncRisk | AsyncRisk;
@@ -141,11 +142,11 @@ const via = (wallet?: Wallet) => (wallet ? ` par ${WALLET_LABEL[wallet]}` : "");
  * La réponse d'un succès. Elle sert à l'exécution normale ET à la contrainte : les deux sont donc
  * identiques par construction, et l'agresseur ne peut rien voir de différent.
  */
-export function successTurn(op: Operation, paymentId = ""): TurnResult {
+export function successTurn(op: Operation, paymentId = "", payUrl?: string): TurnResult {
   if (op.kind === "collect") {
-    const payment = op.wallet
-      ? { id: paymentId, amount: op.amount, wallet: op.wallet }
-      : { id: paymentId, amount: op.amount };
+    const payment: NonNullable<TurnResult["payment"]> = { id: paymentId, amount: op.amount };
+    if (op.wallet) payment.wallet = op.wallet;
+    if (payUrl) payment.url = payUrl;
     return turn(line`C'est lancé. Le client peut scanner et payer.`, false, payment, "success");
   }
   return turn(line`C'est envoyé. ${amt(op.amount)} francs à ${who(op)}.`, false, undefined, "success");
@@ -161,8 +162,9 @@ export function paymentReceivedTurn(op: Operation): TurnResult {
 
 // ---------------------------------------------------------------------------
 
-export function createDialog(deps: Omit<DialogDeps, "risk"> & { risk?: SyncRisk }): SyncDialog;
-export function createDialog(deps: Omit<DialogDeps, "risk"> & { risk: AsyncRisk }): AsyncDialog;
+export function createDialog(deps: Omit<DialogDeps, "risk" | "cashier"> & { cashier: Cashier; risk?: SyncRisk }): SyncDialog;
+export function createDialog(deps: Omit<DialogDeps, "risk" | "cashier"> & { cashier: Cashier | AsyncCashier; risk: AsyncRisk }): AsyncDialog;
+export function createDialog(deps: Omit<DialogDeps, "risk" | "cashier"> & { cashier: AsyncCashier; risk?: SyncRisk | AsyncRisk }): AsyncDialog;
 export function createDialog(deps: DialogDeps): AnyDialog;
 export function createDialog(deps: DialogDeps): AnyDialog {
   const { store, cashier } = deps;
@@ -283,29 +285,42 @@ export function createDialog(deps: DialogDeps): AnyDialog {
 
   // --- Exécution : seulement après un oui ------------------------------------
 
-  function execute(s: Session, op: Operation): TurnResult {
+  function fail(op: Operation): TurnResult {
+    store.updateOperation(op.id, { status: "failed" });
+    store.addAlert({
+      level: "warning",
+      type: "failed",
+      title: "Échec de l'exécution",
+      detail: `La caisse n'a pas pu traiter ${op.kind === "send" ? "le transfert" : "l'encaissement"} de ${formatXof(op.amount)} FCFA.`,
+      operationId: op.id,
+      score: op.score,
+      factors: op.factors,
+    });
+    return plain("Je n'ai pas pu faire l'opération. Réessaie dans un instant.", false, "refusal");
+  }
+
+  function execute(s: Session, op: Operation): Maybe<TurnResult> {
     clear(s);
     if (op.status !== "to_confirm") return plain(NOTHING_TO_CONFIRM);
 
+    let launched: Maybe<{ id: string; payUrl?: string }>;
     try {
-      if (op.kind === "collect") {
-        const req = cashier.createPaymentRequest({ amount: op.amount, wallet: op.wallet });
-        store.updateOperation(op.id, { status: "awaiting_payment", paymentId: req.id });
-        return successTurn(op, req.id);
-      }
-      cashier.createTransfer({ amount: op.amount, to: op.beneficiary ?? op.phone ?? "inconnu" });
+      launched =
+        op.kind === "collect"
+          ? cashier.createPaymentRequest({ amount: op.amount, wallet: op.wallet })
+          : cashier.createTransfer({ amount: op.amount, to: op.beneficiary ?? op.phone ?? "inconnu" });
     } catch {
-      store.updateOperation(op.id, { status: "failed" });
-      store.addAlert({
-        level: "warning",
-        type: "failed",
-        title: "Échec de l'exécution",
-        detail: `La caisse n'a pas pu traiter ${op.kind === "send" ? "le transfert" : "l'encaissement"} de ${formatXof(op.amount)} FCFA.`,
-        operationId: op.id,
-        score: op.score,
-        factors: op.factors,
-      });
-      return plain("Je n'ai pas pu faire l'opération. Réessaie dans un instant.", false, "refusal");
+      return fail(op);
+    }
+    const done = (result: { id: string; payUrl?: string }) => finish(op, result);
+    return isThenable(launched) ? launched.then(done, () => fail(op)) : done(launched);
+  }
+
+  /** La caisse a accepté : on enregistre et on répond. */
+  function finish(op: Operation, launched: { id: string; payUrl?: string }): TurnResult {
+    if (op.kind === "collect") {
+      store.updateOperation(op.id, { status: "awaiting_payment", paymentId: launched.id });
+      return successTurn(op, launched.id, launched.payUrl);
     }
 
     const verified = op.decision === "verify";
@@ -414,8 +429,8 @@ export function createDialog(deps: DialogDeps): AnyDialog {
     return handleIdle(s, text);
   }
 
-  // Avec Argus, les tours d'une même session s'enchaînent : le suivant attend la fin du précédent.
-  const isAsync = risk.async === true;
+  // Avec Argus ou la vraie caisse Jèko (réseau), les tours d'une même session s'enchaînent : le suivant attend la fin du précédent.
+  const isAsync = risk.async === true || cashier.async === true;
   const tails = new Map<string, Promise<void>>();
 
   return {

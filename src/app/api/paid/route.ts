@@ -13,6 +13,8 @@ export async function POST(req: Request) {
   return guarded(async () => {
     const rt = getRuntime();
     if (!rt.demoMode) return json({ error: "demo_only" }, 403);
+    // Avec la vraie caisse, c'est le client qui paie pour de vrai : le webhook de Jèko fait foi, jamais ce bouton.
+    if (rt.cashierMode === "live") return json({ error: "live_mode" }, 409);
 
     const body = await readJson(req);
     if (!body.ok) return body.response;

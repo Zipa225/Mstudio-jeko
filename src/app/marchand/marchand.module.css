@@ -337,6 +337,19 @@
   cursor: wait;
 }
 
+.payLink {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  border: 2px solid var(--jeko-violet);
+  border-radius: var(--rayon-bouton);
+  color: var(--jeko-violet);
+  font-size: 18px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .footer {
   margin: auto 0 0;
   color: var(--texte-doux);

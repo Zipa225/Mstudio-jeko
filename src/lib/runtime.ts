@@ -3,12 +3,13 @@
 // Rien de secret n'est écrit ici : la clé de signature vient de la configuration, ou est générée au hasard.
 
 import { createAethexVoice } from "./aethex";
-import { getConfig, type AppConfig, type ArgusConfig } from "./config";
+import { getConfig, type AppConfig, type ArgusConfig, type JekoConfig } from "./config";
 import { createDialog, type Dialog } from "./dialog";
 import { createDuressGuard } from "./duress";
+import { createJekoLive } from "./jekoLive";
 import { JekoMock } from "./jekoMock";
 import { createWebhookReceiver, type WebhookOutcome, type WebhookRequest } from "./jekoWebhook";
-import type { AsyncRisk, SyncRisk, VoiceService } from "./ports";
+import type { AsyncCashier, AsyncRisk, Cashier, SyncRisk, VoiceService } from "./ports";
 import { createArgusRisk, withFallback } from "./riskArgus";
 import { createLocalRisk } from "./riskLocal";
 import { Store } from "./store";
@@ -36,6 +37,12 @@ export interface RuntimeOptions {
   voice?: VoiceService | null;
   /** `fetch` utilisé pour appeler AethexAI (tests). */
   aethexFetch?: typeof fetch;
+  /** Réglages de Jèko (sinon : configuration). */
+  jeko?: JekoConfig;
+  /** Caisse imposée (tests). */
+  cashier?: Cashier | AsyncCashier;
+  /** `fetch` utilisé pour appeler Jèko (tests). */
+  jekoFetch?: typeof fetch;
 }
 
 /** Nombre de phrases récentes que la synthèse vocale accepte de prononcer. */
@@ -44,7 +51,12 @@ const SPEECH_MEMORY = 200;
 export interface Runtime {
   readonly options: RuntimeOptions;
   store: Store;
+  /** La fausse caisse : toujours là, car elle fournit la clé de signature des webhooks et simule le client en mode démo. */
   mock: JekoMock;
+  /** `live` : la vraie API Jèko crée les demandes de paiement. `mock` : fausse caisse. */
+  cashierMode: "mock" | "live";
+  /** Vrai si la clé de signature des webhooks vient de la configuration (sinon les vrais webhooks Jèko seront refusés). */
+  webhookConfigured: boolean;
   dialog: Dialog;
   receive: (req: WebhookRequest) => WebhookOutcome;
   getPhrase: () => string | undefined;
@@ -91,7 +103,27 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     });
     risk = withFallback(remote, local, (reason) => notifyDegraded(store, reason));
   }
-  const dialog = createDialog({ store, cashier: mock, guard: createDuressGuard(store, getPhrase), risk });
+  const jeko = options.jeko ?? getConfig().jeko;
+  let cashier: Cashier | AsyncCashier = mock;
+  let cashierMode: "mock" | "live" = "mock";
+  if (options.cashier) {
+    cashier = options.cashier;
+    cashierMode = options.cashier === mock ? "mock" : "live";
+  } else if (jeko.mode === "live" && jeko.apiKey && jeko.apiKeyId && jeko.storeId) {
+    cashier = createJekoLive({
+      baseUrl: jeko.baseUrl,
+      apiKey: jeko.apiKey,
+      apiKeyId: jeko.apiKeyId,
+      storeId: jeko.storeId,
+      publicBaseUrl: jeko.publicBaseUrl,
+      timeoutMs: jeko.timeoutMs,
+      fetchImpl: options.jekoFetch,
+    });
+    cashierMode = "live";
+  }
+  const dialog = createDialog({
+    store, cashier, guard: createDuressGuard(store, getPhrase, cashier.decoyPayUrl?.bind(cashier)), risk,
+  });
   const receive = createWebhookReceiver({ store, secret: mock.webhookSecret });
 
   const aethex = options.aethex ?? getConfig().aethex;
@@ -103,7 +135,8 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
 
   const allowed = new Set<string>();
   return {
-    options, store, mock, dialog, receive, getPhrase,
+    options, store, mock, cashierMode, dialog,
+    webhookConfigured: Boolean(options.secret ?? getConfig().jekoWebhookSecret), receive, getPhrase,
     demoMode: options.demoMode ?? getConfig().demoMode,
     riskMode: risk.async === true ? "api" : "local",
     voice,

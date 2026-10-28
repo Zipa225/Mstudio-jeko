@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { startRecording, type Recording } from "./marchand/audio";
 import styles from "./marchand/marchand.module.css";
 import {
-  canSimulateClientPayment, errorView, GREETING, heardLine, isTestMode, keepNumbersTogether, micErrorMessage, newSessionId,
-  PHASE_LABEL, screenKind, showConfirmButtons, voiceModeFrom, type Phase, type TurnView, type VoiceMode,
+  canSimulateClientPayment, errorView, GREETING, heardLine, isTestMode, jekoModeFrom, keepNumbersTogether, micErrorMessage,
+  newSessionId, PAYMENT_POLL_MAX_MS, PAYMENT_POLL_MS, payLink, PHASE_LABEL, screenKind, showConfirmButtons, voiceModeFrom,
+  type Phase, type TurnView, type VoiceMode,
 } from "./marchand/view";
 
 // Reconnaissance vocale du navigateur : voix de secours, quand AethexAI n'est pas configuré.
@@ -69,6 +70,7 @@ export default function MarchandPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [sessionId, setSessionId] = useState("");
   const [demoMode, setDemoMode] = useState(false);
+  const [jekoLive, setJekoLive] = useState(false);
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("browser");
   const [testMode, setTestMode] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(true);
@@ -102,8 +104,9 @@ export default function MarchandPage() {
     setVoiceSupported(getRecognition() !== undefined);
     fetch("/api/health", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : undefined))
-      .then((data: { demoMode?: boolean; voice?: unknown } | undefined) => {
+      .then((data: { demoMode?: boolean; voice?: unknown; jeko?: unknown } | undefined) => {
         setDemoMode(data?.demoMode === true);
+        setJekoLive(jekoModeFrom(data) === "live");
         const mode = voiceModeFrom(data);
         voiceModeRef.current = mode;
         setVoiceMode(mode);
@@ -180,13 +183,43 @@ export default function MarchandPage() {
     [speakWithBrowser],
   );
 
+  /** Paiements lancés avec la vraie caisse et pas encore confirmés par Jèko : référence -> heure du lancement. */
+  const pendingPayments = useRef(new Map<string, number>());
+
   const show = useCallback(
     (view: TurnView) => {
+      if (view.payment?.id) pendingPayments.current.set(view.payment.id, Date.now());
       setResult(view);
       void speak(view.speech);
     },
     [speak],
   );
+
+  // Avec la vraie caisse, le client paie de son côté : on demande au serveur si le webhook signé de Jèko est arrivé.
+  useEffect(() => {
+    if (!jekoLive) return;
+    let stopped = false;
+    const timer = setInterval(async () => {
+      for (const [id, since] of [...pendingPayments.current]) {
+        if (Date.now() - since > PAYMENT_POLL_MAX_MS) {
+          pendingPayments.current.delete(id);
+          continue;
+        }
+        try {
+          const res = await fetch(`/api/payment?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+          if (!res.ok || stopped) continue;
+          const data = (await res.json()) as TurnView & { status?: string };
+          if (data.status === "paid" && pendingPayments.current.delete(id) && !stopped) show(data);
+        } catch {
+          /* réseau coupé : on réessaie au prochain passage */
+        }
+      }
+    }, PAYMENT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [jekoLive, show]);
 
   const send = useCallback(
     async (text: string) => {
@@ -385,7 +418,13 @@ export default function MarchandPage() {
         </div>
       )}
 
-      {canSimulateClientPayment(result, demoMode) && (
+      {payLink(result) && (
+        <a className={styles.payLink} href={payLink(result)} target="_blank" rel="noopener noreferrer">
+          Lien de paiement du client
+        </a>
+      )}
+
+      {canSimulateClientPayment(result, demoMode, jekoLive) && (
         <button type="button" className={styles.simulate} disabled={busy} onClick={() => void simulateClientPayment()}>
           Simuler : le client a payé
         </button>
