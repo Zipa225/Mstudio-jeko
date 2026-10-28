@@ -2,12 +2,13 @@
 // Les routes passent toutes par ici. L'instance est gardée sur `globalThis` pour survivre au rechargement à chaud de Next.
 // Rien de secret n'est écrit ici : la clé de signature vient de la configuration, ou est générée au hasard.
 
-import { getConfig, type ArgusConfig } from "./config";
+import { createAethexVoice } from "./aethex";
+import { getConfig, type AppConfig, type ArgusConfig } from "./config";
 import { createDialog, type Dialog } from "./dialog";
 import { createDuressGuard } from "./duress";
 import { JekoMock } from "./jekoMock";
 import { createWebhookReceiver, type WebhookOutcome, type WebhookRequest } from "./jekoWebhook";
-import type { AsyncRisk, SyncRisk } from "./ports";
+import type { AsyncRisk, SyncRisk, VoiceService } from "./ports";
 import { createArgusRisk, withFallback } from "./riskArgus";
 import { createLocalRisk } from "./riskLocal";
 import { Store } from "./store";
@@ -29,7 +30,16 @@ export interface RuntimeOptions {
   risk?: SyncRisk | AsyncRisk;
   /** `fetch` utilisé pour appeler Argus (tests). */
   fetchImpl?: typeof fetch;
+  /** Réglages d'AethexAI (sinon : configuration). */
+  aethex?: AppConfig["aethex"];
+  /** Voix imposée (tests) ; `null` force « pas de voix serveur ». */
+  voice?: VoiceService | null;
+  /** `fetch` utilisé pour appeler AethexAI (tests). */
+  aethexFetch?: typeof fetch;
 }
+
+/** Nombre de phrases récentes que la synthèse vocale accepte de prononcer. */
+const SPEECH_MEMORY = 200;
 
 export interface Runtime {
   readonly options: RuntimeOptions;
@@ -41,6 +51,12 @@ export interface Runtime {
   demoMode: boolean;
   /** Qui examine les opérations : l'API Argus (avec le calcul local en secours) ou le calcul local seul. */
   riskMode: "api" | "local";
+  /** La voix serveur (AethexAI), si une clé est configurée. Sinon, la page utilise la voix du navigateur. */
+  voice: VoiceService | undefined;
+  voiceMode: "aethex" | "browser";
+  /** La synthèse ne prononce que des phrases produites par le serveur : on les mémorise ici. */
+  allowSpeech(text: string): void;
+  isAllowedSpeech(text: string): boolean;
 }
 
 function notifyDegraded(store: Store, reason: string): void {
@@ -77,10 +93,26 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
   }
   const dialog = createDialog({ store, cashier: mock, guard: createDuressGuard(store, getPhrase), risk });
   const receive = createWebhookReceiver({ store, secret: mock.webhookSecret });
+
+  const aethex = options.aethex ?? getConfig().aethex;
+  let voice: VoiceService | undefined;
+  if (options.voice !== undefined) voice = options.voice ?? undefined;
+  else if (aethex.apiKey) {
+    voice = createAethexVoice({ baseUrl: aethex.baseUrl, apiKey: aethex.apiKey, voiceId: aethex.voiceId, fetchImpl: options.aethexFetch });
+  }
+
+  const allowed = new Set<string>();
   return {
     options, store, mock, dialog, receive, getPhrase,
     demoMode: options.demoMode ?? getConfig().demoMode,
     riskMode: risk.async === true ? "api" : "local",
+    voice,
+    voiceMode: voice ? "aethex" : "browser",
+    allowSpeech(text: string) {
+      allowed.add(text);
+      if (allowed.size > SPEECH_MEMORY) allowed.delete(allowed.values().next().value as string);
+    },
+    isAllowedSpeech: (text: string) => allowed.has(text),
   };
 }
 

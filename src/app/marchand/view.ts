@@ -52,6 +52,20 @@ export const isTestMode = (search: string): boolean => new URLSearchParams(searc
 export const newSessionId = (randomBytes: ArrayLike<number>): string =>
   `awa-${Array.from(randomBytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 
+/** D'où vient la voix : d'AethexAI (clé configurée côté serveur), ou du navigateur en secours. */
+export type VoiceMode = "aethex" | "browser";
+
+export const voiceModeFrom = (health: { voice?: unknown } | undefined): VoiceMode => (health?.voice === "aethex" ? "aethex" : "browser");
+
+/** Message pour la vendeuse quand le micro ne démarre pas. `name` : le nom de l'erreur du navigateur. */
+export function micErrorMessage(name: string | undefined, secureContext: boolean): string {
+  if (!secureContext) return "Le micro demande une connexion sécurisée (HTTPS) : écris ta demande.";
+  if (name === "NotAllowedError" || name === "SecurityError") return "Autorise le micro dans ton navigateur.";
+  if (name === "NotFoundError" || name === "OverconstrainedError") return "Aucun micro n'a été trouvé.";
+  if (name === "NotReadableError") return "Le micro est utilisé par une autre application.";
+  return "Le micro n'est pas disponible ici : écris ta demande.";
+}
+
 /** « 10 000 » ne doit pas se couper en fin de ligne : on lie les groupes de chiffres par une espace insécable. */
 export const keepNumbersTogether = (text: string): string => text.replace(/(\d) (?=\d{3}(?!\d))/g, "$1 ");
 

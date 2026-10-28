@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { startRecording, type Recording } from "./marchand/audio";
 import styles from "./marchand/marchand.module.css";
 import {
-  canSimulateClientPayment, errorView, GREETING, heardLine, isTestMode, keepNumbersTogether, newSessionId, PHASE_LABEL,
-  screenKind, showConfirmButtons, type Phase, type TurnView,
+  canSimulateClientPayment, errorView, GREETING, heardLine, isTestMode, keepNumbersTogether, micErrorMessage, newSessionId,
+  PHASE_LABEL, screenKind, showConfirmButtons, voiceModeFrom, type Phase, type TurnView, type VoiceMode,
 } from "./marchand/view";
 
-// Reconnaissance vocale du navigateur : voix de secours, en attendant AethexAI.
+// Reconnaissance vocale du navigateur : voix de secours, quand AethexAI n'est pas configuré.
 interface Recognition {
   lang: string;
   interimResults: boolean;
@@ -25,6 +26,9 @@ function getRecognition(): RecognitionCtor | undefined {
   const w = window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 }
+
+/** Un WAV vide : jouer ce son sur un geste de la vendeuse autorise ensuite la lecture des réponses sur téléphone. */
+const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 
 function Mic() {
   return (
@@ -65,13 +69,19 @@ export default function MarchandPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [sessionId, setSessionId] = useState("");
   const [demoMode, setDemoMode] = useState(false);
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>("browser");
   const [testMode, setTestMode] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(true);
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState<string | undefined>();
   const recognitionRef = useRef<Recognition | null>(null);
+  const recordingRef = useRef<Recording | null>(null);
+  const playerRef = useRef<HTMLAudioElement | null>(null);
+  /** Chaque lecture a un numéro : une réponse plus récente coupe la précédente. */
+  const speakToken = useRef(0);
+  const voiceModeRef = useRef<VoiceMode>("browser");
 
-  // Initialisation côté navigateur : session, mode clavier, voix disponible, mode démonstration.
+  // Initialisation côté navigateur : session, mode clavier, voix disponible, mode démonstration, source de la voix.
   useEffect(() => {
     let id = "";
     try {
@@ -92,28 +102,88 @@ export default function MarchandPage() {
     setVoiceSupported(getRecognition() !== undefined);
     fetch("/api/health", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : undefined))
-      .then((data: { demoMode?: boolean } | undefined) => setDemoMode(data?.demoMode === true))
+      .then((data: { demoMode?: boolean; voice?: unknown } | undefined) => {
+        setDemoMode(data?.demoMode === true);
+        const mode = voiceModeFrom(data);
+        voiceModeRef.current = mode;
+        setVoiceMode(mode);
+      })
       .catch(() => setDemoMode(false));
   }, []);
 
-  const speak = useCallback((speech: string) => {
+  const unlockAudio = useCallback(() => {
+    const player = playerRef.current ?? (playerRef.current = new Audio());
+    player.src = SILENT_WAV;
+    void player.play().catch(() => undefined);
+  }, []);
+
+  const stopSpeaking = useCallback(() => {
+    speakToken.current++;
+    window.speechSynthesis?.cancel();
+    playerRef.current?.pause();
+  }, []);
+
+  /** Voix du navigateur : le secours quand AethexAI n'est pas configuré ou échoue. */
+  const speakWithBrowser = useCallback((speech: string, token: number) => {
     if (!("speechSynthesis" in window)) {
       setPhase("idle");
       return;
     }
-    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(speech);
     utterance.lang = "fr-FR";
-    utterance.onend = () => setPhase("idle");
-    utterance.onerror = () => setPhase("idle");
-    setPhase("speaking");
+    const done = () => {
+      if (token === speakToken.current) setPhase("idle");
+    };
+    utterance.onend = done;
+    utterance.onerror = done;
     window.speechSynthesis.speak(utterance);
   }, []);
+
+  const speak = useCallback(
+    async (speech: string) => {
+      const token = ++speakToken.current;
+      window.speechSynthesis?.cancel();
+      playerRef.current?.pause();
+      setPhase("speaking");
+
+      if (voiceModeRef.current === "aethex") {
+        try {
+          const res = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ text: speech }),
+            cache: "no-store",
+          });
+          if (!res.ok) throw new Error(String(res.status));
+          const url = URL.createObjectURL(await res.blob());
+          if (token !== speakToken.current) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          const player = playerRef.current ?? (playerRef.current = new Audio());
+          const end = () => {
+            URL.revokeObjectURL(url);
+            if (token === speakToken.current) setPhase("idle");
+          };
+          player.onended = end;
+          player.onerror = end;
+          player.src = url;
+          await player.play();
+          return;
+        } catch {
+          /* AethexAI indisponible ou lecture refusée : on bascule sur la voix du navigateur */
+          if (token !== speakToken.current) return;
+        }
+      }
+      speakWithBrowser(speech, token);
+    },
+    [speakWithBrowser],
+  );
 
   const show = useCallback(
     (view: TurnView) => {
       setResult(view);
-      speak(view.speech);
+      void speak(view.speech);
     },
     [speak],
   );
@@ -138,17 +208,52 @@ export default function MarchandPage() {
     [sessionId, show],
   );
 
-  function toggleMic() {
-    if (phase === "thinking") return;
-    if (phase === "listening") {
-      recognitionRef.current?.stop();
-      return;
-    }
-    if (phase === "speaking") {
-      window.speechSynthesis?.cancel();
+  /** L'enregistrement part au serveur, qui le fait transcrire par AethexAI puis le traite comme du texte. */
+  const sendAudio = useCallback(
+    async (wav: ArrayBuffer) => {
+      setPhase("thinking");
+      setNotice(undefined);
+      try {
+        const form = new FormData();
+        form.set("sessionId", sessionId);
+        form.set("audio", new Blob([wav], { type: "audio/wav" }), "voix.wav");
+        const res = await fetch("/api/turn", { method: "POST", body: form, cache: "no-store" });
+        if (res.ok) {
+          show((await res.json()) as TurnView);
+          return;
+        }
+        const body = (await res.json().catch(() => ({}))) as { message?: string };
+        setPhase("idle");
+        setNotice(body.message ?? "Je n'ai pas pu comprendre l'audio. Réessaie.");
+      } catch {
+        show(errorView());
+      }
+    },
+    [sessionId, show],
+  );
+
+  async function listenWithAethex() {
+    setNotice(undefined);
+    try {
+      const recording = await startRecording();
+      recordingRef.current = recording;
+      setPhase("listening");
+      const heard = await recording.result;
+      recordingRef.current = null;
+      if (!heard) {
+        setPhase("idle");
+        setNotice("Je n'ai pas entendu. Réessaie.");
+        return;
+      }
+      await sendAudio(heard.wav);
+    } catch (e) {
+      recordingRef.current = null;
       setPhase("idle");
-      return;
+      setNotice(micErrorMessage((e as { name?: string })?.name, window.isSecureContext));
     }
+  }
+
+  function listenWithBrowser() {
     const Ctor = getRecognition();
     if (!Ctor) {
       setNotice("Le micro n'est pas disponible ici : écris ta demande.");
@@ -177,10 +282,28 @@ export default function MarchandPage() {
     rec.start();
   }
 
+  function toggleMic() {
+    if (phase === "thinking") return;
+    if (phase === "listening") {
+      recordingRef.current?.stop();
+      recognitionRef.current?.stop();
+      return;
+    }
+    if (phase === "speaking") {
+      stopSpeaking();
+      setPhase("idle");
+      return;
+    }
+    unlockAudio();
+    if (voiceModeRef.current === "aethex") void listenWithAethex();
+    else listenWithBrowser();
+  }
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
     if (!text || phase === "thinking") return;
+    unlockAudio();
     setInput("");
     void send(text);
   }
@@ -188,6 +311,7 @@ export default function MarchandPage() {
   async function simulateClientPayment() {
     const id = result.payment?.id;
     if (!id) return;
+    unlockAudio();
     setPhase("thinking");
     setNotice(undefined);
     try {
@@ -211,8 +335,14 @@ export default function MarchandPage() {
   const kind = screenKind(result);
   const busy = phase === "thinking";
   const heard = heardLine(result.heard);
-  const showKeyboard = testMode || !voiceSupported;
+  const showKeyboard = testMode || (voiceMode === "browser" && !voiceSupported);
   const cardClass = `${styles.card} ${kind === "verify" ? styles.cardVerify : kind === "refusal" ? styles.cardRefusal : ""}`;
+  const footer =
+    voiceMode === "aethex"
+      ? "Voix AethexAI."
+      : voiceSupported
+        ? "Voix du navigateur (secours : AethexAI n'est pas configuré)."
+        : "Voix indisponible sur ce navigateur : mode clavier.";
 
   return (
     <main className={styles.screen}>
@@ -246,10 +376,10 @@ export default function MarchandPage() {
 
       {showConfirmButtons(result) && (
         <div className={styles.confirm}>
-          <button type="button" className={`${styles.choice} ${styles.yes}`} disabled={busy} onClick={() => void send("oui")}>
+          <button type="button" className={`${styles.choice} ${styles.yes}`} disabled={busy} onClick={() => { unlockAudio(); void send("oui"); }}>
             <Check size={36} /> Oui
           </button>
-          <button type="button" className={`${styles.choice} ${styles.no}`} disabled={busy} onClick={() => void send("non")}>
+          <button type="button" className={`${styles.choice} ${styles.no}`} disabled={busy} onClick={() => { unlockAudio(); void send("non"); }}>
             <Cross /> Non
           </button>
         </div>
@@ -299,9 +429,7 @@ export default function MarchandPage() {
         </form>
       )}
 
-      <p className={styles.footer}>
-        {voiceSupported ? "Voix du navigateur (secours, en attendant AethexAI)." : "Voix indisponible sur ce navigateur : mode clavier."}
-      </p>
+      <p className={styles.footer}>{footer}</p>
     </main>
   );
 }

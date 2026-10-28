@@ -11,6 +11,14 @@ export interface Cashier {
   createTransfer(args: { amount: number; to: string }): { id: string };
 }
 
+/** La voix : transcrire ce que dit la vendeuse, et lui répondre à voix haute. */
+export interface VoiceService {
+  /** Voix vers texte. `mime` : audio/wav, audio/flac ou audio/ogg. */
+  transcribe(audio: ArrayBuffer, mime: string): Promise<string>;
+  /** Texte vers voix : un fichier WAV (24 kHz, mono). */
+  synthesize(text: string): Promise<{ audio: ArrayBuffer; contentType: string }>;
+}
+
 /** Ce que le dialogue sait d'une opération au moment de la faire examiner. */
 export interface RiskRequest {
   kind: "collect" | "send";

@@ -16,6 +16,8 @@ export async function GET() {
       duress: duressStatus(rt.getPhrase()),
       /** `api` : Argus examine les opérations. `local` : calcul local de secours (Argus non configuré). */
       argus: rt.riskMode,
+      /** `aethex` : la voix vient d'AethexAI (clé configurée). `browser` : voix du navigateur en secours. */
+      voice: rt.voiceMode,
       demoMode: rt.demoMode,
     });
   });
