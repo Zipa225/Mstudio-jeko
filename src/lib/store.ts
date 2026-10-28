@@ -34,7 +34,7 @@ export interface Alert {
   id: string;
   ts: number;
   level: "info" | "warning" | "critical";
-  type: "verified" | "blocked" | "duress" | "failed";
+  type: "verified" | "blocked" | "duress" | "failed" | "webhook";
   title: string;
   detail: string;
   operationId?: string;
