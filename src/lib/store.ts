@@ -28,13 +28,18 @@ export interface Operation {
   factors: Factor[];
   verifiedByVoice: boolean;
   paymentId?: string;
+  /** Qui a calculé le score : l'API Argus, ou le calcul local (secours). */
+  riskSource?: "argus" | "local";
+  modelVersion?: string;
+  /** Vrai si Argus était injoignable et que le score local a servi de secours. */
+  degraded?: boolean;
 }
 
 export interface Alert {
   id: string;
   ts: number;
   level: "info" | "warning" | "critical";
-  type: "verified" | "blocked" | "duress" | "failed" | "webhook";
+  type: "verified" | "blocked" | "duress" | "failed" | "webhook" | "degraded";
   title: string;
   detail: string;
   operationId?: string;
@@ -179,6 +184,21 @@ export class Store {
       (o) => o.kind === "collect" && o.status === "paid" && o.ts >= start && o.ts < start + 86_400_000,
     );
     return { total: paid.reduce((sum, o) => sum + o.amount, 0), count: paid.length };
+  }
+
+  /**
+   * Identifiant de compte d'un bénéficiaire, tel qu'Argus le reçoit : le numéro du contact s'il est connu, le numéro
+   * dit sinon, ou un identifiant stable dérivé du nom (le même nom donne toujours le même compte).
+   */
+  accountFor(who: { name?: string; phone?: string }): string {
+    const name = who.name ? normalize(who.name) : undefined;
+    const contact = this.merchant.contacts.find(
+      (c) => (name !== undefined && normalize(c.name) === name) || (who.phone !== undefined && c.phone === who.phone),
+    );
+    if (contact) return contact.phone;
+    if (who.phone) return who.phone;
+    if (name) return `nom:${name.replace(/ /g, "-")}`.slice(0, 60);
+    return "inconnu";
   }
 
   isKnownContact(who: { name?: string; phone?: string }): boolean {

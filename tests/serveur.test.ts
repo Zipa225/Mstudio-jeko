@@ -186,7 +186,7 @@ test("health : dit ce qui est configuré, jamais les valeurs", async () => {
   try {
     fresh();
     const h = await read(await health());
-    assert.deepEqual(h.body, { ok: true, aethex: true, duress: "active", demoMode: true });
+    assert.deepEqual(h.body, { ok: true, aethex: true, duress: "active", argus: "local", demoMode: true });
     assert.ok(!h.raw.includes("ae_live_valeur_secrete_de_test"));
     assert.equal(leaks(h.raw), false);
 
@@ -195,6 +195,30 @@ test("health : dit ce qui est configuré, jamais les valeurs", async () => {
   } finally {
     if (saved === undefined) delete process.env.AETHEX_API_KEY;
     else process.env.AETHEX_API_KEY = saved;
+  }
+});
+
+test("health : Argus configuré passe en mode api, sans jamais révéler l'adresse ni la clé", async () => {
+  const names = ["ARGUS_URL", "ARGUS_LICENSE_KEY", "ARGUS_MODE"] as const;
+  const saved = Object.fromEntries(names.map((n) => [n, process.env[n]]));
+  process.env.ARGUS_URL = "http://127.0.0.1:9";
+  process.env.ARGUS_LICENSE_KEY = "licence_secrete_de_test";
+  delete process.env.ARGUS_MODE;
+  try {
+    fresh();
+    const api = await read(await health());
+    assert.equal(api.body.argus, "api");
+    assert.ok(!api.raw.includes("licence_secrete_de_test"));
+    assert.ok(!api.raw.includes("127.0.0.1"));
+
+    process.env.ARGUS_MODE = "local";
+    fresh();
+    assert.equal((await read(await health())).body.argus, "local", "ARGUS_MODE=local impose le calcul local");
+  } finally {
+    for (const n of names) {
+      if (saved[n] === undefined) delete process.env[n];
+      else process.env[n] = saved[n];
+    }
   }
 });
 

@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     if (typeof text !== "string" || text.length > MAX_TEXT) return json({ error: "invalid_text" }, 400);
 
     const rt = getRuntime();
-    const result = rt.dialog.handleTurn(sessionId, text);
+    const result = await rt.dialog.handleTurn(sessionId, text);
     return json({ heard: publicTranscript(text, rt.getPhrase()), ...result });
   });
 }

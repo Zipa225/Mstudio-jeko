@@ -14,6 +14,8 @@ export async function GET() {
       ok: true,
       aethex: getConfig().aethex.configured,
       duress: duressStatus(rt.getPhrase()),
+      /** `api` : Argus examine les opérations. `local` : calcul local de secours (Argus non configuré). */
+      argus: rt.riskMode,
       demoMode: rt.demoMode,
     });
   });
