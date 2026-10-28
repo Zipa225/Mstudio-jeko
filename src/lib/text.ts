@@ -18,6 +18,41 @@ export function tokens(input: string): string[] {
   return n ? n.split(" ") : [];
 }
 
+/** Nombre de modifications (ajout, retrait, remplacement d'une lettre) pour passer de `a` à `b`. */
+export function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Les mots qui comptent dans une phrase secrète : 4 lettres et plus. */
+export const phraseKeywords = (phrase: string): string[] => tokens(phrase).filter((t) => t.length >= 4);
+
+/** Une phrase avec moins de deux mots qui comptent se déclencherait trop facilement : elle est refusée. */
+export const MIN_PHRASE_KEYWORDS = 2;
+
+/**
+ * Vrai si les mots qui comptent de `phrase` se retrouvent dans `utterance`. La reconnaissance vocale n'est jamais
+ * parfaite : un mot de 5 lettres ou plus peut différer d'une lettre. Il faut au moins `minRatio` des mots (80 % par défaut).
+ */
+export function containsFuzzyPhrase(utterance: string, phrase: string, minRatio = 0.8): boolean {
+  const keys = phraseKeywords(phrase);
+  const words = tokens(utterance);
+  if (keys.length < MIN_PHRASE_KEYWORDS || !words.length) return false;
+  const hits = keys.filter((k) => words.some((w) => w === k || (k.length >= 5 && levenshtein(w, k) <= 1))).length;
+  return hits / keys.length >= minRatio;
+}
+
 /** « 150000 » devient « 150 000 » (espace simple, sans espace insécable). */
 export function formatXof(n: number): string {
   return new Intl.NumberFormat("fr-FR").format(n).replace(/[  ]/g, " ");

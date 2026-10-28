@@ -22,15 +22,16 @@ export interface TurnResult {
 }
 
 /**
- * Garde optionnel appelé à l'étape de confirmation, AVANT de lire le oui ou le non.
- * S'il renvoie un résultat, le dialogue s'arrête là : c'est l'emplacement de la phrase de contrainte.
+ * Garde optionnel appelé à chaque phrase, AVANT toute interprétation. `operation` est l'opération en attente de
+ * confirmation, s'il y en a une. S'il renvoie un résultat, le dialogue s'arrête là et la commande en cours est
+ * abandonnée : c'est l'emplacement de la phrase de contrainte.
  */
-export type ConfirmationGuard = (text: string, operation: Operation) => TurnResult | undefined;
+export type TurnGuard = (text: string, operation: Operation | undefined) => TurnResult | undefined;
 
 export interface DialogDeps {
   store: Store;
   cashier: Cashier;
-  guard?: ConfirmationGuard;
+  guard?: TurnGuard;
 }
 
 export interface Dialog {
@@ -98,6 +99,20 @@ function spokenReason(risk: RiskResult): string {
 
 const who = (p: { beneficiary?: string; phone?: string }) => p.beneficiary ?? (p.phone ? formatPhone(p.phone) : "ce numéro");
 const via = (wallet?: Wallet) => (wallet ? ` par ${WALLET_LABEL[wallet]}` : "");
+
+/**
+ * La réponse d'un succès. Elle sert à l'exécution normale ET à la contrainte : les deux sont donc
+ * identiques par construction, et l'agresseur ne peut rien voir de différent.
+ */
+export function successTurn(op: Operation, paymentId = ""): TurnResult {
+  if (op.kind === "collect") {
+    const payment = op.wallet
+      ? { id: paymentId, amount: op.amount, wallet: op.wallet }
+      : { id: paymentId, amount: op.amount };
+    return turn(line`C'est lancé. Le client peut scanner et payer.`, false, payment);
+  }
+  return turn(line`C'est envoyé. ${amt(op.amount)} francs à ${who(op)}.`);
+}
 
 const NOTHING_TO_CONFIRM = "Il n'y a rien à confirmer pour le moment.";
 const ASK_YES_NO = "Dis oui pour confirmer, ou non pour annuler.";
@@ -221,11 +236,7 @@ export function createDialog(deps: DialogDeps): Dialog {
       if (op.kind === "collect") {
         const req = cashier.createPaymentRequest({ amount: op.amount, wallet: op.wallet });
         store.updateOperation(op.id, { status: "awaiting_payment", paymentId: req.id });
-        return turn(
-          line`C'est lancé. Le client peut scanner et payer.`,
-          false,
-          op.wallet ? { id: req.id, amount: op.amount, wallet: op.wallet } : { id: req.id, amount: op.amount },
-        );
+        return successTurn(op, req.id);
       }
       cashier.createTransfer({ amount: op.amount, to: op.beneficiary ?? op.phone ?? "inconnu" });
     } catch {
@@ -255,7 +266,7 @@ export function createDialog(deps: DialogDeps): Dialog {
         factors: op.factors,
       });
     }
-    return turn(line`C'est envoyé. ${amt(op.amount)} francs à ${who(op)}.`);
+    return successTurn(op);
   }
 
   // --- Les trois situations d'une session ------------------------------------
@@ -265,12 +276,6 @@ export function createDialog(deps: DialogDeps): Dialog {
     if (!op) {
       clear(s);
       return plain(NOTHING_TO_CONFIRM);
-    }
-
-    const guarded = deps.guard?.(text, op);
-    if (guarded) {
-      clear(s);
-      return guarded;
     }
 
     // Une nouvelle commande complète remplace la précédente ; elle repasse par une relecture.
@@ -344,6 +349,12 @@ export function createDialog(deps: DialogDeps): Dialog {
       const s = store.getSession(sessionId);
       const text = rawText.trim();
       if (!text) return plain("Je n'ai pas entendu. Tu peux répéter ?", s.pending?.stage === "confirm");
+      const awaiting = s.pending?.stage === "confirm" ? store.getOperation(s.pending.operationId) : undefined;
+      const guarded = deps.guard?.(text, awaiting);
+      if (guarded) {
+        clear(s);
+        return guarded;
+      }
       if (s.pending?.stage === "confirm") return handleConfirm(s, s.pending, text);
       if (s.pending) return handleMissing(s, s.pending, text);
       return handleIdle(s, text);
