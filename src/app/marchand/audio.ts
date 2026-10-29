@@ -86,7 +86,12 @@ export interface AudioStats {
   rms: number;
   /** Amplification appliquée avant l'envoi. */
   gain: number;
+  /** Part des échantillons collés au maximum (≥ 0,98) : un son saturé est déformé et la reconnaissance le comprend mal. */
+  clipped: number;
 }
+
+/** Au-delà de cette part d'échantillons saturés, le son est déformé de façon audible. */
+export const CLIPPING_LIMIT = 0.005;
 
 /** Amplification maximale : au-delà, on gonflerait surtout le bruit. */
 export const MAX_GAIN = 40;
@@ -101,23 +106,26 @@ const SILENCE_PEAK = 0.004;
  * 99,5e centile, pour qu'un claquement isolé ne décide pas du volume de toute la phrase.
  */
 export function normalizeLevel(samples: Float32Array): { samples: Float32Array; stats: Omit<AudioStats, "durationSeconds"> } {
-  if (samples.length === 0) return { samples, stats: { peak: 0, rms: 0, gain: 1 } };
+  if (samples.length === 0) return { samples, stats: { peak: 0, rms: 0, gain: 1, clipped: 0 } };
   const abs = new Float32Array(samples.length);
   let peak = 0;
+  let saturated = 0;
   for (let i = 0; i < samples.length; i++) {
     abs[i] = Math.abs(samples[i]);
     if (abs[i] > peak) peak = abs[i];
+    if (abs[i] >= 0.98) saturated++;
   }
   const rms = rmsOf(samples);
-  if (peak < SILENCE_PEAK) return { samples, stats: { peak, rms, gain: 1 } };
+  const clipped = saturated / samples.length;
+  if (peak < SILENCE_PEAK) return { samples, stats: { peak, rms, gain: 1, clipped } };
   abs.sort();
   const robust = abs[Math.min(abs.length - 1, Math.floor(abs.length * 0.995))] || peak;
   const gain = Math.min(MAX_GAIN, TARGET_PEAK / robust);
   // Déjà au bon niveau (ou plus fort) : on laisse le son tel quel, sans le baisser ni le recopier.
-  if (gain < 1.1) return { samples, stats: { peak, rms, gain: 1 } };
+  if (gain < 1.1) return { samples, stats: { peak, rms, gain: 1, clipped } };
   const out = new Float32Array(samples.length);
   for (let i = 0; i < samples.length; i++) out[i] = Math.max(-1, Math.min(1, samples[i] * gain));
-  return { samples: out, stats: { peak, rms, gain } };
+  return { samples: out, stats: { peak, rms, gain, clipped } };
 }
 
 export type StopReason = "silence" | "max" | "no_speech";
@@ -222,7 +230,7 @@ export interface Recording {
  * parfois la reconnaissance vocale et la gênent d'autres fois, selon l'appareil. La page /micro essaie les trois profils
  * avec la voix de la personne et garde celui que le moteur comprend le mieux.
  */
-export type MicProfile = "standard" | "sans_reduction" | "brut";
+export type MicProfile = "standard" | "sans_reduction" | "sans_gain" | "brut";
 
 export const MIC_PROFILES: Record<MicProfile, { label: string; constraints: MediaTrackConstraints; silence: Partial<SilenceOptions> }> = {
   standard: {
@@ -234,6 +242,11 @@ export const MIC_PROFILES: Record<MicProfile, { label: string; constraints: Medi
     label: "Sans réduction de bruit",
     constraints: { echoCancellation: true, noiseSuppression: false, autoGainControl: true, channelCount: 1 },
     silence: {},
+  },
+  sans_gain: {
+    label: "Sans gain automatique : évite le son saturé",
+    constraints: { echoCancellation: false, noiseSuppression: true, autoGainControl: false, channelCount: 1 },
+    silence: { threshold: 0.008 },
   },
   brut: {
     label: "Brut : aucun traitement du navigateur",
@@ -265,6 +278,87 @@ export function saveMicProfile(profile: MicProfile): void {
   }
 }
 
+/** Qui écoute la vendeuse : AethexAI (par défaut), ou la reconnaissance du navigateur si elle comprend mieux sa voix. */
+export type SttEngine = "aethex" | "navigateur";
+
+const STT_ENGINE_KEY = "jeko-micro-moteur";
+
+export function savedSttEngine(): SttEngine {
+  try {
+    return localStorage.getItem(STT_ENGINE_KEY) === "navigateur" ? "navigateur" : "aethex";
+  } catch {
+    return "aethex";
+  }
+}
+
+export function saveSttEngine(engine: SttEngine): void {
+  try {
+    localStorage.setItem(STT_ENGINE_KEY, engine);
+  } catch {
+    /* stockage indisponible : AethexAI servira */
+  }
+}
+
+const MIC_DEVICE_KEY = "jeko-micro-appareil";
+
+/** Le micro choisi sur la page /micro (identifiant donné par le navigateur), ou `undefined` : celui du système. */
+export function savedMicDevice(): string | undefined {
+  try {
+    return localStorage.getItem(MIC_DEVICE_KEY) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `undefined` : on revient au micro par défaut du système. */
+export function saveMicDevice(deviceId: string | undefined): void {
+  try {
+    if (deviceId) localStorage.setItem(MIC_DEVICE_KEY, deviceId);
+    else localStorage.removeItem(MIC_DEVICE_KEY);
+  } catch {
+    /* stockage indisponible : le micro du système servira */
+  }
+}
+
+/**
+ * Ouvre le micro avec les contraintes du profil, sur le micro choisi (`deviceId`, sinon celui enregistré, sinon celui du
+ * système). Si le micro enregistré n'existe plus (écouteurs débranchés, par exemple), on l'oublie et on prend celui du système.
+ */
+export async function openMic(profile: MicProfile, deviceId: string | undefined = savedMicDevice()): Promise<MediaStream> {
+  const base = MIC_PROFILES[profile].constraints;
+  if (deviceId) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: { ...base, deviceId: { exact: deviceId } } });
+    } catch (e) {
+      const name = (e as { name?: string })?.name;
+      if (name !== "OverconstrainedError" && name !== "NotFoundError") throw e;
+      if (deviceId === savedMicDevice()) saveMicDevice(undefined);
+    }
+  }
+  return navigator.mediaDevices.getUserMedia({ audio: base });
+}
+
+export type LevelVerdict = "attente" | "silence" | "faible" | "ok" | "sature";
+
+/**
+ * Ce que dit le niveau mesuré sur un micro. `peak` : plus grand niveau vu depuis le début (0 à 1) ; `elapsedMs` : durée de la
+ * mesure. Pendant les 3 premières secondes sans son, on attend : la personne n'a peut-être pas encore parlé.
+ */
+export function levelVerdict(peak: number, elapsedMs: number): LevelVerdict {
+  if (peak >= 0.98) return "sature";
+  if (peak >= 0.02) return "ok";
+  if (elapsedMs < 3000) return "attente";
+  return peak < 0.004 ? "silence" : "faible";
+}
+
+export const LEVEL_MESSAGE: Record<LevelVerdict, string> = {
+  attente: "Parle maintenant : la barre doit bouger.",
+  silence: "Ce micro ne capte rien. Choisis un autre micro dans la liste, ou règle l'entrée du son dans ton appareil (sous Windows : Paramètres, Système, Son, Entrée).",
+  faible: "Ce micro capte très peu : rapproche-toi, ou monte le volume d'entrée de ton appareil.",
+  ok: "Ce micro capte bien ta voix.",
+  sature: "Le son sature : baisse le volume d'entrée de ton appareil, ou éloigne-toi un peu.",
+};
+
 /** Du son brut au fichier envoyé : mono, 16 kHz, volume remonté. Pure, donc testée sans micro. */
 export function prepareForUpload(channels: Float32Array[], sampleRate: number): { wav: ArrayBuffer; stats: AudioStats } {
   const mono = resample(mixToMono(channels), sampleRate, TARGET_SAMPLE_RATE);
@@ -279,7 +373,7 @@ export function prepareForUpload(channels: Float32Array[], sampleRate: number): 
  */
 export async function startRecording(profile: MicProfile = savedMicProfile(), base: SilenceOptions = DEFAULT_SILENCE): Promise<Recording> {
   const options: SilenceOptions = { ...base, ...MIC_PROFILES[profile].silence };
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_PROFILES[profile].constraints });
+  const stream = await openMic(profile);
   const AudioCtor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   const context = new AudioCtor();
   if (context.state === "suspended") await context.resume().catch(() => undefined);

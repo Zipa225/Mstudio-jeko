@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MIC_PROFILES, saveMicProfile, startRecording, type MicProfile, type Recording } from "../marchand/audio";
+import {
+  CLIPPING_LIMIT, MIC_PROFILES, saveMicProfile, saveSttEngine, startRecording, type MicProfile, type Recording, type SttEngine,
+} from "../marchand/audio";
+import { browserSpeechSupported, recognizeOnce, type BrowserListening } from "../marchand/browserSpeech";
 import { describeRecording, micErrorMessage, voiceModeFrom } from "../marchand/view";
 import styles from "../prospect/prospect.module.css";
-import { bestProfile, EXPECTED_PHRASE, phraseScore, scoreLabel } from "./score";
+import MicCheck from "./MicCheck";
+import { bestProfile, chooseEngine, EXPECTED_PHRASE, phraseScore, scoreLabel } from "./score";
 
-const PROFILES: MicProfile[] = ["standard", "sans_reduction", "brut"];
+const PROFILES = Object.keys(MIC_PROFILES) as MicProfile[];
 
 interface Result {
   profile: MicProfile;
@@ -14,6 +18,7 @@ interface Result {
   summary?: string;
   url?: string;
   problem?: string;
+  saturated?: boolean;
 }
 
 type Step = "idle" | "listening" | "sending" | "done";
@@ -26,11 +31,18 @@ export default function MicroPage() {
   const [index, setIndex] = useState(0);
   const [results, setResults] = useState<Result[]>([]);
   const [chosen, setChosen] = useState<MicProfile | undefined>();
+  const [browserHeard, setBrowserHeard] = useState<string | undefined>();
+  const [browserProblem, setBrowserProblem] = useState<string | undefined>();
+  const [browserBusy, setBrowserBusy] = useState(false);
+  const [engine, setEngine] = useState<SttEngine | undefined>();
   const [notice, setNotice] = useState<string | undefined>();
+  const [canBrowser, setCanBrowser] = useState(false);
   const recordingRef = useRef<Recording | null>(null);
+  const browserRef = useRef<BrowserListening | undefined>(undefined);
   const urls = useRef<string[]>([]);
 
   useEffect(() => {
+    setCanBrowser(browserSpeechSupported());
     fetch("/api/health", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : undefined))
       .then((health) => setVoiceReady(voiceModeFrom(health) === "aethex"))
@@ -51,9 +63,15 @@ export default function MicroPage() {
     }
   }
 
+  const takesOf = (list: Result[]) =>
+    list.filter((r) => r.heard !== undefined).map((r) => ({ profile: r.profile, heard: r.heard as string, saturated: r.saturated === true }));
+
   async function run() {
     setResults([]);
     setChosen(undefined);
+    setBrowserHeard(undefined);
+    setBrowserProblem(undefined);
+    setEngine(undefined);
     setNotice(undefined);
     const done: Result[] = [];
     for (const [i, profile] of PROFILES.entries()) {
@@ -73,6 +91,7 @@ export default function MicroPage() {
           urls.current.push(url);
           result.url = url;
           result.summary = describeRecording(heard.stats);
+          result.saturated = heard.stats.clipped > CLIPPING_LIMIT;
           setStep("sending");
           const text = await transcribe(heard.wav);
           if (text === undefined) result.problem = "La transcription a échoué (AethexAI ne répond pas ?).";
@@ -89,17 +108,45 @@ export default function MicroPage() {
       setResults([...done]);
     }
 
-    const best = bestProfile(done.filter((r) => r.heard !== undefined).map((r) => ({ profile: r.profile, heard: r.heard as string })));
+    const best = bestProfile(takesOf(done));
     if (best) {
       saveMicProfile(best);
+      saveSttEngine("aethex");
       setChosen(best);
+      setEngine("aethex");
     } else {
       setNotice("Aucun réglage n'a donné un texte utile. Rapproche le micro, parle un peu plus fort, ou essaie dans un endroit plus calme.");
     }
     setStep("done");
   }
 
+  /** Essai facultatif : la reconnaissance du navigateur comprend-elle mieux cette voix ? Lancé par un clic (geste requis). */
+  async function tryBrowser() {
+    setBrowserBusy(true);
+    setBrowserProblem(undefined);
+    const listening = recognizeOnce();
+    browserRef.current = listening;
+    if (!listening) {
+      setBrowserProblem("Ce navigateur n'a pas de reconnaissance vocale.");
+      setBrowserBusy(false);
+      return;
+    }
+    const { text, error } = await listening.result;
+    browserRef.current = undefined;
+    setBrowserBusy(false);
+    if (!text.trim()) {
+      setBrowserHeard(undefined);
+      setBrowserProblem(error === "not-allowed" ? "Autorise le micro dans ton navigateur." : "Rien entendu : réessaie.");
+      return;
+    }
+    setBrowserHeard(text.trim());
+    const picked = chooseEngine(takesOf(results), text.trim());
+    saveSttEngine(picked);
+    setEngine(picked);
+  }
+
   const running = step === "listening" || step === "sending";
+  const total = PROFILES.length;
 
   return (
     <main className={styles.screen}>
@@ -115,10 +162,12 @@ export default function MicroPage() {
         <p className={styles.notice} role="alert">La voix AethexAI n'est pas configurée sur ce serveur : ce test ne peut pas se faire.</p>
       )}
 
+      <MicCheck />
+
       <section className={styles.thread} aria-live="polite">
         <p className={`${styles.bubble} ${styles.agent}`}>
-          Trois essais d'affilée. À chaque essai, dis la même phrase, calmement : <strong>« {EXPECTED_PHRASE} »</strong>. L'essai
-          s'arrête tout seul quand tu te tais.
+          {total} essais d'affilée. À chaque essai, dis la même phrase, calmement et à environ 20 cm du micro :{" "}
+          <strong>« {EXPECTED_PHRASE} »</strong>. L'essai s'arrête tout seul quand tu te tais.
         </p>
 
         {results.map((r) => {
@@ -132,23 +181,41 @@ export default function MicroPage() {
                   Compris : « {r.heard || "(rien)"} » {score !== undefined && <em>({scoreLabel(score)})</em>}
                 </span>
               )}
-              {r.summary && <span className={styles.source}>{r.summary}</span>}
+              {r.summary && <span className={styles.source} style={r.saturated ? { fontWeight: 700 } : undefined}>{r.summary}</span>}
               {r.url && <audio controls src={r.url} style={{ width: "100%", marginTop: 6 }} />}
-              {chosen === r.profile && <span className={styles.source}><strong>Réglage retenu pour cet appareil.</strong></span>}
+              {chosen === r.profile && engine === "aethex" && <span className={styles.source}><strong>Réglage retenu pour cet appareil.</strong></span>}
             </div>
           );
         })}
 
+        {browserHeard !== undefined && (
+          <div className={`${styles.bubble} ${styles.agent}`}>
+            <strong>Reconnaissance du navigateur</strong>
+            <span style={{ display: "block", marginTop: 6 }}>
+              Compris : « {browserHeard} » <em>({scoreLabel(phraseScore(browserHeard))})</em>
+            </span>
+            {engine === "navigateur" && <span className={styles.source}><strong>Moteur retenu pour cet appareil.</strong></span>}
+          </div>
+        )}
+        {browserProblem && <p className={`${styles.bubble} ${styles.agent}`}>{browserProblem}</p>}
+
         {running && (
           <p className={`${styles.bubble} ${styles.visitor}`}>
-            {step === "listening" ? `Essai ${index + 1} sur 3 : parle maintenant.` : `Essai ${index + 1} sur 3 : envoi en cours…`}
+            {step === "listening" ? `Essai ${index + 1} sur ${total} : parle maintenant.` : `Essai ${index + 1} sur ${total} : envoi en cours…`}
           </p>
         )}
+        {browserBusy && <p className={`${styles.bubble} ${styles.visitor}`}>Parle maintenant : le navigateur t'écoute.</p>}
 
-        {step === "done" && chosen && (
+        {step === "done" && engine === "aethex" && chosen && (
           <p className={`${styles.bubble} ${styles.agent}`}>
-            C'est réglé : les pages <strong>/</strong> et <strong>/prospect</strong> utiliseront « {MIC_PROFILES[chosen].label} » sur cet
-            appareil. Tu peux recommencer à tout moment.
+            C'est réglé : les pages <strong>/</strong> et <strong>/prospect</strong> utiliseront AethexAI avec « {MIC_PROFILES[chosen].label} » sur
+            cet appareil. Tu peux recommencer à tout moment.
+          </p>
+        )}
+        {step === "done" && engine === "navigateur" && (
+          <p className={`${styles.bubble} ${styles.agent}`}>
+            C'est réglé : sur cet appareil, <strong>le navigateur écoute</strong> (il t'a mieux compris qu'AethexAI) et AethexAI continue de
+            parler. Tu peux recommencer à tout moment.
           </p>
         )}
       </section>
@@ -156,15 +223,27 @@ export default function MicroPage() {
       {notice && <p className={styles.notice} role="alert">{notice}</p>}
 
       <div className={styles.form}>
-        <button type="button" className={styles.send} style={{ flex: 1 }} disabled={running || voiceReady !== true} onClick={() => void run()}>
-          {step === "idle" ? "Lancer le test (3 essais)" : running ? "Test en cours…" : "Recommencer"}
+        <button type="button" className={styles.send} style={{ flex: 1 }} disabled={running || browserBusy || voiceReady !== true} onClick={() => void run()}>
+          {step === "idle" ? `Lancer le test (${total} essais)` : running ? "Test en cours…" : "Recommencer"}
         </button>
         {step === "listening" && (
           <button type="button" className={styles.send} onClick={() => recordingRef.current?.stop()}>Arrêter l'essai</button>
         )}
       </div>
 
-      <p className={styles.footer}>Chaque essai est envoyé à AethexAI pour être transcrit ; ce serveur ne garde pas le son.</p>
+      {step === "done" && canBrowser && (
+        <div className={styles.form}>
+          <button type="button" className={styles.send} style={{ flex: 1 }} disabled={browserBusy} onClick={() => void tryBrowser()}>
+            {browserBusy ? "Le navigateur écoute…" : "Essayer aussi la reconnaissance du navigateur"}
+          </button>
+          {browserBusy && <button type="button" className={styles.send} onClick={() => browserRef.current?.stop()}>Arrêter</button>}
+        </div>
+      )}
+
+      <p className={styles.footer}>
+        Chaque essai est envoyé à AethexAI pour être transcrit ; ce serveur ne garde pas le son. L'essai du navigateur est traité par le
+        service de reconnaissance de ton navigateur.
+      </p>
     </main>
   );
 }

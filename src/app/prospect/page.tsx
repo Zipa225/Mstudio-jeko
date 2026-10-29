@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { startRecording, type Recording } from "../marchand/audio";
-import { describeRecording, isDebugMode, micErrorMessage, sourceLine, voiceModeFrom, type VoiceMode } from "../marchand/view";
+import { saveMicProfile, savedMicProfile, savedSttEngine, startRecording, type Recording } from "../marchand/audio";
+import { recognizeOnce } from "../marchand/browserSpeech";
+import { describeRecording, isDebugMode, micErrorMessage, saturationAdvice, sourceLine, voiceModeFrom, type VoiceMode } from "../marchand/view";
 import styles from "./prospect.module.css";
 
 interface Message {
@@ -166,8 +167,23 @@ export default function ProspectPage() {
     }
     unlockAudio();
     setNotice(undefined);
+
+    // La page /micro peut avoir montré que la reconnaissance du navigateur comprend mieux cette voix.
+    if (savedSttEngine() === "navigateur") {
+      const listeningNow = recognizeOnce();
+      if (listeningNow) {
+        setListening(true);
+        const { text, error } = await listeningNow.result;
+        setListening(false);
+        if (text.trim()) await sendText(text.trim());
+        else setNotice(error === "not-allowed" ? "Autorise le micro dans ton navigateur." : "Je n'ai pas entendu. Réessaie.");
+        return;
+      }
+    }
+
     try {
-      const recording = await startRecording();
+      const profile = savedMicProfile();
+      const recording = await startRecording(profile);
       recordingRef.current = recording;
       setListening(true);
       const heard = await recording.result;
@@ -182,6 +198,12 @@ export default function ProspectPage() {
           if (old) URL.revokeObjectURL(old.url);
           return { url: URL.createObjectURL(new Blob([heard.wav], { type: "audio/wav" })), summary: describeRecording(heard.stats) };
         });
+      }
+      const advice = saturationAdvice(profile, heard.stats);
+      if (advice) {
+        if (advice.nextProfile) saveMicProfile(advice.nextProfile);
+        setNotice(advice.message);
+        return;
       }
       await sendAudio(heard.wav);
     } catch (e) {

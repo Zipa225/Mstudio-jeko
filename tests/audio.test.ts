@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  createSilenceDetector, DEFAULT_SILENCE, encodeWav, MAX_GAIN, MAX_RECORDING_MS, mixToMono, normalizeLevel, prepareForUpload,
+  CLIPPING_LIMIT, createSilenceDetector, DEFAULT_SILENCE, encodeWav, MAX_GAIN, MAX_RECORDING_MS, mixToMono, normalizeLevel, prepareForUpload,
   resample, rmsOf, type SilenceDecision,
 } from "../src/app/marchand/audio";
 import { describeRecording, isDebugMode } from "../src/app/marchand/view";
@@ -123,7 +123,7 @@ test("normalizeLevel : le silence ou le bruit seul n'est pas amplifié", () => {
   assert.equal(r.stats.gain, 1);
   assert.equal(r.samples, hiss);
   const empty = normalizeLevel(new Float32Array(0));
-  assert.deepEqual(empty.stats, { peak: 0, rms: 0, gain: 1 });
+  assert.deepEqual(empty.stats, { peak: 0, rms: 0, gain: 1, clipped: 0 });
 });
 
 test("normalizeLevel : l'amplification est plafonnée à ×40", () => {
@@ -159,6 +159,29 @@ test("prepareForUpload : mono, 16 kHz, volume remonté, WAV valide", () => {
   assert.ok(stats.gain > 10);
   const first = view.getInt16(44 + 2 * 36, true);
   assert.ok(Math.abs(first) > 0, "le son n'est pas muet");
+});
+
+test("saturation : la part d'échantillons collés au maximum est mesurée, et un son saturé n'est pas amplifié", () => {
+  const square = Float32Array.from({ length: 1000 }, (_v, i) => (i % 2 ? 1 : -1)); // tout le temps au maximum
+  const r = normalizeLevel(square);
+  assert.equal(r.stats.clipped, 1);
+  assert.equal(r.stats.gain, 1, "déjà au plafond : jamais amplifié");
+  assert.equal(normalizeLevel(tone(0.05)).stats.clipped, 0);
+  const few = tone(0.5, 10_000);
+  few[0] = 1;
+  few[1] = -1; // 2 échantillons sur 10 000
+  assert.ok(Math.abs(normalizeLevel(few).stats.clipped - 0.0002) < 1e-9);
+});
+
+test("saturation : le diagnostic l'annonce avant tout le reste", () => {
+  const saturated = describeRecording({ durationSeconds: 2, peak: 1, gain: 1, clipped: 0.05 });
+  assert.match(saturated, /SATURÉ/);
+  assert.match(saturated, /baisse le volume du micro/);
+  assert.doesNotMatch(saturated, /volume correct/, "un son saturé n'est pas « correct »");
+  assert.match(describeRecording({ durationSeconds: 2, peak: 1, gain: 1, clipped: 0 }), /volume correct/);
+  assert.match(describeRecording({ durationSeconds: 2, peak: 1, gain: 1, clipped: CLIPPING_LIMIT }), /volume correct/, "à la limite exacte : pas encore saturé");
+  assert.match(describeRecording({ durationSeconds: 2, peak: 1, gain: 1, clipped: CLIPPING_LIMIT + 0.001 }), /SATURÉ/);
+  assert.match(describeRecording({ durationSeconds: 2, peak: 0.5, gain: 1 }), /volume correct/, "sans mesure : comme avant");
 });
 
 test("mode debug : détection de ?debug=1 et description de l'enregistrement", () => {

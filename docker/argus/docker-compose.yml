@@ -87,7 +87,11 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ML_ENGINE_URL: http://fastapi:8001
       ML_API_KEY: ${ML_API_KEY}
-      ML_TIMEOUT_MS: ${ML_TIMEOUT_MS:-150}
+      # Délai laissé au moteur ML. Argus fixe 150 ms par défaut, mais après un moment d'inactivité il assemble ses données
+      # « sur cache froid » (environ une seconde) : au-delà du délai il passe en repli fail-closed (quarantaine, score 70) et
+      # l'application REFUSE une opération normale, souvent le premier encaissement. 1500 ms garde une marge, et reste sous
+      # le délai de l'application (ARGUS_TIMEOUT_MS, 2000 par défaut).
+      ML_TIMEOUT_MS: ${ML_TIMEOUT_MS:-1500}
       TENANT_ID: ${TENANT_ID:-00000000-0000-0000-0000-000000000001}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Lance npm run argus:env}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Lance npm run argus:env}
