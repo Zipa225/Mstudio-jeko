@@ -26,7 +26,7 @@ export interface Intent {
 // ---------------------------------------------------------------------------
 
 /** Façons dont la reconnaissance vocale écrit « Wave » (AethexAI a rendu « WAF » lors d'un essai réel). */
-const WAVE_MISHEARD = new Set(["waf", "wav", "waive", "ouave", "ouaive", "weave"]);
+const WAVE_MISHEARD = new Set(["waf", "wif", "wav", "waive", "ouave", "ouaive", "weave"]);
 
 export function extractWallet(text: string): Wallet | undefined {
   for (const t of tokens(text)) {

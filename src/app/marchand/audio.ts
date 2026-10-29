@@ -217,6 +217,54 @@ export interface Recording {
   result: Promise<RecordingResult | undefined>;
 }
 
+/**
+ * Les traitements que le navigateur applique au micro (annulation d'écho, réduction de bruit, gain automatique) aident
+ * parfois la reconnaissance vocale et la gênent d'autres fois, selon l'appareil. La page /micro essaie les trois profils
+ * avec la voix de la personne et garde celui que le moteur comprend le mieux.
+ */
+export type MicProfile = "standard" | "sans_reduction" | "brut";
+
+export const MIC_PROFILES: Record<MicProfile, { label: string; constraints: MediaTrackConstraints; silence: Partial<SilenceOptions> }> = {
+  standard: {
+    label: "Standard : écho, réduction de bruit et gain automatiques",
+    constraints: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+    silence: {},
+  },
+  sans_reduction: {
+    label: "Sans réduction de bruit",
+    constraints: { echoCancellation: true, noiseSuppression: false, autoGainControl: true, channelCount: 1 },
+    silence: {},
+  },
+  brut: {
+    label: "Brut : aucun traitement du navigateur",
+    constraints: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+    // Sans gain automatique la voix est plus basse : le seuil de détection de parole baisse aussi.
+    silence: { threshold: 0.008 },
+  },
+};
+
+export const isMicProfile = (value: unknown): value is MicProfile => typeof value === "string" && Object.hasOwn(MIC_PROFILES, value);
+
+const MIC_PROFILE_KEY = "jeko-micro-profil";
+
+/** Le profil retenu pour cet appareil par la page /micro, sinon « standard ». Le stockage peut être indisponible. */
+export function savedMicProfile(): MicProfile {
+  try {
+    const value = localStorage.getItem(MIC_PROFILE_KEY);
+    return isMicProfile(value) ? value : "standard";
+  } catch {
+    return "standard";
+  }
+}
+
+export function saveMicProfile(profile: MicProfile): void {
+  try {
+    localStorage.setItem(MIC_PROFILE_KEY, profile);
+  } catch {
+    /* stockage indisponible : le profil standard servira */
+  }
+}
+
 /** Du son brut au fichier envoyé : mono, 16 kHz, volume remonté. Pure, donc testée sans micro. */
 export function prepareForUpload(channels: Float32Array[], sampleRate: number): { wav: ArrayBuffer; stats: AudioStats } {
   const mono = resample(mixToMono(channels), sampleRate, TARGET_SAMPLE_RATE);
@@ -229,10 +277,9 @@ export function prepareForUpload(channels: Float32Array[], sampleRate: number): 
  * intermédiaire qui abîment la voix. Le contrôle automatique du gain remonte les voix basses ; l'annulation d'écho évite
  * que le micro réentende la voix de l'assistant.
  */
-export async function startRecording(options: SilenceOptions = DEFAULT_SILENCE): Promise<Recording> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-  });
+export async function startRecording(profile: MicProfile = savedMicProfile(), base: SilenceOptions = DEFAULT_SILENCE): Promise<Recording> {
+  const options: SilenceOptions = { ...base, ...MIC_PROFILES[profile].silence };
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_PROFILES[profile].constraints });
   const AudioCtor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   const context = new AudioCtor();
   if (context.state === "suspended") await context.resume().catch(() => undefined);
