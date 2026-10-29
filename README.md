@@ -209,6 +209,8 @@ adresse à enregistrer dans le tableau de bord ; le secret de signature fourni v
 
 ## Script de démonstration
 
+Le texte à dire pour la présentation, les réponses aux questions du jury et la liste du matin sont dans [PITCH.md](PITCH.md).
+
 Durée : environ 3 minutes. Matériel : l'ordinateur sur le grand écran (`/analyste`), un téléphone pour la commerçante (`/`) avec
 un **micro-casque**.
 
