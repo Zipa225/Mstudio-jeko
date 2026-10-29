@@ -58,10 +58,10 @@ voix qui la protège. »
 
 *Awa : « Envoie cent cinquante mille francs à (prénom neuf). »*
 
-« Argus regarde l'opération : c'est beaucoup plus que d'habitude, et c'est un nouveau numéro. L'assistant le dit à voix haute et pose la
-question : est-ce bien elle qui décide ? »
+« Argus regarde l'opération : c'est beaucoup plus que d'habitude, et c'est un nouveau contact. L'assistant le dit à voix haute, puis
+demande s'il envoie. »
 
-*L'assistant : « Attention. C'est beaucoup plus que d'habitude et c'est un nouveau numéro pour toi. [...] C'est bien toi qui décides ? »*
+*L'assistant : « 150 000 francs pour (prénom neuf). C'est beaucoup plus que d'habitude, et c'est un nouveau contact. Je l'envoie ? »*
 
 « Awa ne peut pas crier. Alors elle répond normalement, et elle glisse son mot secret dans sa phrase. »
 
@@ -162,7 +162,7 @@ Si Argus est injoignable, un calcul local de secours prend le relais et l'analys
 répond pas, l'assistant parle avec la voix du navigateur, et on peut taper au clavier.
 
 **« Est-ce fiable ? »**
-Le projet a 411 tests automatiques, et pour chaque règle importante nous avons cassé le code volontairement pour vérifier qu'un test échoue.
+Le projet a 414 tests automatiques, et pour chaque règle importante nous avons cassé le code volontairement pour vérifier qu'un test échoue.
 Aucun test n'appelle une vraie API. Cela dit, la voix réelle dépend du micro et du bruit, et ça, un test ne le garantit pas.
 
 **« Quel modèle économique ? »**
