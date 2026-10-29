@@ -47,8 +47,9 @@ test("encaisser : « fais payer », qu'une vendeuse dit plus souvent que « enca
 
 test("encaisser : « payer » tout seul ne décide de rien, c'est l'entourage qui dit qui paie qui", () => {
   check([
-    // Là, c'est le marchand qui paie : surtout pas un encaissement.
-    ["je dois payer mille francs à Koffi", { kind: "unknown" }],
+    // Là, c'est le marchand qui paie : surtout pas un encaissement. Le montant est gardé et
+    // l'agent demandera « encaisser ou envoyer ? » : il ne devine pas.
+    ["je dois payer mille francs à Koffi", { kind: "amount", amount: 1000 }],
     // Un verbe explicite l'emporte sur l'expression : « il me doit » ne retourne pas l'envoi.
     ["Envoie mille francs à Koffi, il me doit", { kind: "send", amount: 1000, beneficiary: "Koffi" }],
     // Une question sans montant reste une question.

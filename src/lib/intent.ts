@@ -230,7 +230,8 @@ export function parseIntent(rawText: string): Intent {
   const amount = parseAmount(norm);
   const verb = toks.find((t) => COLLECT_VERBS.has(t) || SEND_VERBS.has(t));
   // Cherché seulement faute de verbe : quand les deux sont là, le verbe est le signal le plus clair et il décide.
-  const collectPhrase = verb === undefined && hasAny(padded(text), COLLECT_PHRASES);
+  // Sur `norm` et non sur le texte brut : la recherche doit voir le même texte que celle du verbe, donc réparé.
+  const collectPhrase = verb === undefined && hasAny(` ${norm} `, COLLECT_PHRASES);
   const question = isQuestion(norm);
 
   // « comment envoyer de l'argent ? » est une question, pas un ordre : un ordre porte un montant.
