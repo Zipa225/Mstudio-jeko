@@ -8,7 +8,8 @@ import { normalize, tokens } from "./text";
 export type Wallet = "wave" | "orange" | "mtn" | "moov";
 export const WALLET_LABEL: Record<Wallet, string> = { wave: "Wave", orange: "Orange", mtn: "MTN", moov: "Moov" };
 
-export type IntentKind = "collect" | "send" | "summary" | "support" | "unknown";
+/** `amount` : un montant d'argent sans verbe compris (« on voit 5000 francs par 8 ») : l'agent demande s'il faut encaisser ou envoyer. */
+export type IntentKind = "collect" | "send" | "summary" | "support" | "amount" | "unknown";
 
 export interface Intent {
   kind: IntentKind;
@@ -108,7 +109,7 @@ export function extractBeneficiary(text: string, options: { bare?: boolean } = {
 // ---------------------------------------------------------------------------
 
 const YES = [
-  "oui", "ouais", "ouaip", "yes", "ok", "okay", "daccord", "d accord", "confirme", "confirmer", "valide", "valider",
+  "oui", "ouais", "ouai", "ouep", "wi", "ui", "ouaip", "yes", "ok", "okay", "daccord", "d accord", "confirme", "confirmer", "valide", "valider",
   "exact", "exactement", "parfait", "vasy", "vas y", "c est bon", "c est ca", "bien sur", "tout a fait",
 ];
 /** Annulation explicite : elle l'emporte toujours, même accompagnée d'un « ok ». */
@@ -151,17 +152,52 @@ const SUMMARY = [
   /\btotal (du jour|d aujourd hui)\b/,
 ];
 
+// ---------------------------------------------------------------------------
+// Réparer les erreurs de prononciation courantes de la reconnaissance vocale
+// ---------------------------------------------------------------------------
+
+const MONEY_WORDS = new Set(["franc", "francs", "fcfa", "cfa", "xof", "f"]);
+const hasMoneyWord = (norm: string) => norm.split(" ").some((w) => MONEY_WORDS.has(w));
+
+/** « envoie » entendu « on voit », « en voie », « en voyé »... */
+const SEND_MISHEARD = /\b(?:on|en|an) (?:voit|voie|voix|voi|voyer|voye|voyez)\b/g;
+/** « encaisse » entendu « on casse », « en caisse », « en cesse »... */
+const COLLECT_MISHEARD = /\b(?:on|en|an) (?:caisse|caisses|casse|casses|cesse|kess|quaisse|caisser|cesser|casser)\b/g;
+/** « Wave » entendu « 8 », « huit », « vague », « ouève »... après « par », « sur » ou « avec ». */
+const WALLET_MISHEARD = /\b(par|sur|avec) (?:8|huit|weve|wev|oueve|ouev|vague|vagues|waif|ouaf)\b/g;
+
+/**
+ * Le texte normalisé, avec les erreurs de prononciation connues corrigées. Ces corrections ne s'appliquent QUE quand la
+ * phrase parle d'argent (un montant et « francs », ou `assumeMoney`) : « on voit que » dans une conversation ordinaire
+ * ne devient jamais « envoie ». Le texte d'origine reste la référence pour les noms.
+ */
+export function repairSpeech(text: string, assumeMoney = false): string {
+  const norm = normalize(text);
+  if (!assumeMoney && !(parseAmount(text) !== undefined && hasMoneyWord(norm))) return norm;
+  return norm.replace(SEND_MISHEARD, "envoie").replace(COLLECT_MISHEARD, "encaisse").replace(WALLET_MISHEARD, "$1 wave");
+}
+
+/** Encaisser ou envoyer ? Réponse à la question de l'agent, tolérante aux mêmes erreurs. `undefined` si on ne sait pas. */
+export function kindFrom(text: string): "collect" | "send" | undefined {
+  const toks = repairSpeech(text, true).split(" ");
+  if (toks.some((t) => COLLECT_VERBS.has(t) || ["recevoir", "recois", "recoit"].includes(t))) return "collect";
+  if (toks.some((t) => SEND_VERBS.has(t))) return "send";
+  return undefined;
+}
+
 function isQuestion(norm: string): boolean {
   return norm.startsWith("est ce que") || norm.split(" ").some((t) => QUESTION_WORDS.has(t));
 }
 
-export function parseIntent(text: string): Intent {
-  const norm = normalize(text);
+export function parseIntent(rawText: string): Intent {
+  const norm = repairSpeech(rawText);
   const toks = norm ? norm.split(" ") : [];
+  // Les noms gardent leurs accents : ils se lisent dans le texte d'origine, pas dans le texte réparé.
+  const text = rawText;
 
   if (SUMMARY.some((re) => re.test(norm))) return { kind: "summary" };
 
-  const amount = parseAmount(text);
+  const amount = parseAmount(norm);
   const verb = toks.find((t) => COLLECT_VERBS.has(t) || SEND_VERBS.has(t));
   const question = isQuestion(norm);
 
@@ -169,7 +205,7 @@ export function parseIntent(text: string): Intent {
   if (verb && !(question && amount === undefined)) {
     const intent: Intent = { kind: COLLECT_VERBS.has(verb) ? "collect" : "send" };
     if (amount !== undefined) intent.amount = amount;
-    const wallet = extractWallet(text);
+    const wallet = extractWallet(norm);
     if (wallet) intent.wallet = wallet;
     if (intent.kind === "send") {
       const beneficiary = extractBeneficiary(text);
@@ -178,6 +214,12 @@ export function parseIntent(text: string): Intent {
       if (phone) intent.phone = phone;
     }
     return intent;
+  }
+
+  // Un montant d'argent sans verbe compris : on ne devine pas, l'agent demande s'il faut encaisser ou envoyer.
+  if (amount !== undefined && !question) {
+    const wallet = extractWallet(norm);
+    if (hasMoneyWord(norm) || wallet) return { kind: "amount", amount, ...(wallet ? { wallet } : {}) };
   }
 
   const keyword = SUPPORT_KEYWORDS.some((k) => toks.includes(k)) || norm.includes("cote d ivoire");
