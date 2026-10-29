@@ -24,12 +24,14 @@ async function main(): Promise<number> {
     timeoutMs: Math.max(argus.timeoutMs, 5000),
   });
 
+  // Un bénéficiaire inventé à chaque lancement : Argus mémorise les bénéficiaires, et « Koné » doit rester NOUVEAU pour la démo.
+  const stranger = () => `nom:test-${Math.random().toString(16).slice(2, 10)}`;
   const base = { avgTicket: 4500, previousOps: 0, now: new Date() };
   const cases: Array<[string, RiskRequest]> = [
     ["Encaissement de 5 000 FCFA", { ...base, kind: "collect", amount: 5000, beneficiaryAccount: argus.senderAccountId, beneficiaryKnown: true }],
     ["Transfert de 5 000 FCFA vers un contact connu", { ...base, kind: "send", amount: 5000, beneficiaryAccount: "0100000001", beneficiaryKnown: true }],
-    ["Transfert de 150 000 FCFA vers un inconnu (scène de la contrainte)", { ...base, kind: "send", amount: 150_000, beneficiaryAccount: "nom:kone", beneficiaryKnown: false }],
-    ["Transfert de 250 000 FCFA vers un inconnu (refus attendu)", { ...base, kind: "send", amount: 250_000, beneficiaryAccount: "nom:kone", beneficiaryKnown: false }],
+    ["Transfert de 150 000 FCFA vers un inconnu (scène de la contrainte)", { ...base, kind: "send", amount: 150_000, beneficiaryAccount: stranger(), beneficiaryKnown: false }],
+    ["Transfert de 250 000 FCFA vers un inconnu (refus attendu)", { ...base, kind: "send", amount: 250_000, beneficiaryAccount: stranger(), beneficiaryKnown: false }],
   ];
 
   let failures = 0;

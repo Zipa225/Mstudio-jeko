@@ -216,7 +216,9 @@ test("lien factice : même forme qu'un vrai lien, mais différent", async () => 
   assert.equal(decoy.protocol, "https:");
   assert.equal(decoy.origin, real.origin);
   assert.equal(decoy.pathname.split("/").length, real.pathname.split("/").length, "même nombre de segments");
-  assert.ok(decoy.pathname.split("/").at(-1)!.length >= real.pathname.split("/").at(-1)!.length);
+  const token = decoy.pathname.split("/").at(-1)!;
+  assert.equal(token.length, real.pathname.split("/").at(-1)!.length, "même longueur");
+  assert.match(token, /^[0-9a-f]+$/, "même alphabet : pas de lettres qui trahissent un identifiant interne");
   assert.notEqual(decoy.toString(), real.toString());
   assert.notEqual(decoy.toString(), new URL(jeko.decoyPayUrl!("pr_12345678")).toString(), "jamais deux fois le même");
 });

@@ -8,7 +8,8 @@
 
 import { randomUUID } from "node:crypto";
 import type { AsyncRisk, RiskAssessment, RiskRequest, SyncRisk } from "./ports";
-import type { Decision, Factor } from "./risk";
+import { getConfig } from "./config";
+import { scoreRisk, type Decision, type Factor } from "./risk";
 
 /** Compte du client qui paie, pour un encaissement (identifiant de démonstration). */
 export const CLIENT_ACCOUNT_ID = "client-demo";
@@ -76,6 +77,30 @@ function toAssessment(data: unknown): RiskAssessment {
   return assessment;
 }
 
+/** Les raisons de son modèle : « conforme aux habitudes », « autorisation immédiate ». */
+const CONTRADICTION = /conforme|autorisation imm[ée]diate/i;
+
+/**
+ * Quand une règle d'Argus fait monter la décision (vérifier, refuser) alors que son modèle trouve l'opération normale,
+ * Argus renvoie la raison et les facteurs du MODÈLE (« conforme aux habitudes ») : la phrase dite à la vendeuse se
+ * contredirait. On garde la décision d'Argus (c'est elle qui fait foi) et on l'explique avec nos propres critères.
+ */
+function explain(a: RiskAssessment, request: RiskRequest): RiskAssessment {
+  if (a.decision === "accept") return a;
+  const contradictory = a.decisionReason !== undefined && CONTRADICTION.test(a.decisionReason);
+  if (!contradictory && (a.decisionReason || a.factors.length > 0)) return a;
+  const { decisionReason: _dropped, ...rest } = a;
+  try {
+    const local = scoreRisk(
+      { kind: request.kind, amount: request.amount, beneficiaryKnown: request.beneficiaryKnown, avgTicket: request.avgTicket, previousOps: request.previousOps, now: request.now },
+      getConfig(),
+    );
+    return { ...rest, factors: local.factors };
+  } catch {
+    return contradictory ? { ...rest, factors: [] } : a;
+  }
+}
+
 export function createArgusRisk(options: ArgusOptions): AsyncRisk {
   let base: URL;
   try {
@@ -134,7 +159,7 @@ export function createArgusRisk(options: ArgusOptions): AsyncRisk {
       } catch {
         throw new ArgusError("invalid", "Réponse d'Argus illisible");
       }
-      return toAssessment(data);
+      return explain(toAssessment(data), request);
     },
   };
 }

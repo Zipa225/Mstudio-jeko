@@ -165,11 +165,12 @@ export function createJekoLive(options: JekoLiveOptions): JekoLive {
       return { id: `tr_${hex(4)}` };
     },
 
-    decoyPayUrl(id: string) {
+    decoyPayUrl(_id: string) {
       const model = lastRealUrl ?? new URL("https://pay.jeko.africa/");
       const segments = model.pathname.split("/").filter(Boolean);
       const last = segments.at(-1) ?? "";
-      const token = UUID.test(last) ? randomUUID() : (id.replace(/[^A-Za-z0-9]/g, "") + hex(16)).slice(0, Math.max(8, last.length));
+      // Jeton entièrement aléatoire (jamais dérivé de `id`, dont les lettres « pr » le trahiraient), de la même forme que le vrai.
+      const token = UUID.test(last) ? randomUUID() : hex(Math.ceil(Math.max(8, last.length) / 2)).slice(0, Math.max(8, last.length));
       const decoy = new URL(model.origin);
       decoy.pathname = `/${[...segments.slice(0, -1), token].join("/")}`;
       return decoy.toString();
