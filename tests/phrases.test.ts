@@ -166,7 +166,7 @@ test("parcours des boutons : encaissement, vérification, contrainte, refus, sup
   assert.equal((await press("oui")).body.reply, "C'est lancé. Le client peut scanner et payer.");
 
   const verify = await press("transfert");
-  assert.match(verify.body.reply, /^Attention\./, "question de vérification");
+  assert.match(verify.body.reply, /^150 000 francs pour /, "question de vérification");
   assert.equal(verify.body.awaitingConfirm, true);
 
   const forced = await press("contrainte");

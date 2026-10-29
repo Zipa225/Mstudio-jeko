@@ -407,8 +407,8 @@ test("démo complète par les routes : encaisser, contrainte, refus, support", a
 
   // 2. Transfert de 150 000 francs : vérification parlée, puis la phrase secrète.
   const ask = await say("Envoie cent cinquante mille francs à Koné");
-  assert.match(ask.body.reply, /^Attention\./);
-  assert.match(ask.body.reply, /nouveau numéro/);
+  assert.match(ask.body.reply, /^150 000 francs pour Koné\./);
+  assert.match(ask.body.reply, /nouveau contact/);
   const forced = await say(`Oui, c'est bon, ${PHRASE}`);
   assert.equal(forced.body.reply, "C'est envoyé. 150 000 francs à Koné.");
   assert.equal(forced.body.heard, "Oui");

@@ -366,7 +366,7 @@ test("dialogue : le doute d'Argus est dit à voix haute, avec sa raison, avant l
   const ask = await say("Envoie cent cinquante mille francs à Koné");
   assert.equal(ask.tone, "verify");
   assert.equal(ask.awaitingConfirm, true);
-  assert.equal(ask.reply, "Attention. Montant inhabituel vers un bénéficiaire jamais vu en 90 jours. Tu envoies 150 000 francs à Koné. C'est bien toi qui décides ?");
+  assert.equal(ask.reply, "150 000 francs pour Koné. Montant inhabituel vers un bénéficiaire jamais vu en 90 jours. Je l'envoie ?");
   assert.deepEqual([last().riskSource, last().modelVersion, last().score, last().decision], ["argus", "2026.08.1", 72, "verify"]);
   assert.equal(last().factors.length, 2);
   assert.equal(calls.transfer.length, 0, "rien ne part avant le oui");

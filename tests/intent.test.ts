@@ -30,6 +30,33 @@ test("encaisser : ce qui manque reste absent, l'agent le demandera", () => {
   ]);
 });
 
+test("encaisser : « fais payer », qu'une vendeuse dit plus souvent que « encaisse »", () => {
+  check([
+    ["Fais payer cinq mille francs", { kind: "collect", amount: 5000 }],
+    ["faire payer cinq mille", { kind: "collect", amount: 5000 }],
+    ["fais-moi payer cinq mille francs", { kind: "collect", amount: 5000 }],
+    ["demande de paiement de cinq mille", { kind: "collect", amount: 5000 }],
+    ["le client doit payer cinq mille", { kind: "collect", amount: 5000 }],
+    ["il me doit cinq mille francs", { kind: "collect", amount: 5000 }],
+    ["le client va payer deux mille", { kind: "collect", amount: 2000 }],
+    ["fais payer dix mille francs par Wave", { kind: "collect", amount: 10000, wallet: "wave" }],
+    // Sans montant, c'est quand même un encaissement : l'agent demandera combien.
+    ["fais payer", { kind: "collect" }],
+  ]);
+});
+
+test("encaisser : « payer » tout seul ne décide de rien, c'est l'entourage qui dit qui paie qui", () => {
+  check([
+    // Là, c'est le marchand qui paie : surtout pas un encaissement. Le montant est gardé et
+    // l'agent demandera « encaisser ou envoyer ? » : il ne devine pas.
+    ["je dois payer mille francs à Koffi", { kind: "amount", amount: 1000 }],
+    // Un verbe explicite l'emporte sur l'expression : « il me doit » ne retourne pas l'envoi.
+    ["Envoie mille francs à Koffi, il me doit", { kind: "send", amount: 1000, beneficiary: "Koffi" }],
+    // Une question sans montant reste une question.
+    ["comment faire payer un client ?", { kind: "support" }],
+  ]);
+});
+
 // --- Envoyer ---------------------------------------------------------------
 
 test("envoyer : montant, bénéficiaire avec ses accents, moyen de paiement", () => {
@@ -50,6 +77,20 @@ test("envoyer : la casse est ramenée à la normale, une casse voulue est gardé
   assert.equal(extractBeneficiary("ENVOIE 5000 À KONÉ"), "Koné");
   assert.equal(extractBeneficiary("envoie 5000 à N'Guessan"), "N'Guessan");
   assert.equal(extractBeneficiary("envoie 5000 à Kone"), "Kone", "on n'invente pas un accent absent");
+});
+
+test("envoyer : un titre n'est pas un nom, « à monsieur Diallo » donne Diallo", () => {
+  assert.equal(extractBeneficiary("envoie 5000 à monsieur Diallo"), "Diallo");
+  assert.equal(extractBeneficiary("envoie 5000 à madame Fatou"), "Fatou");
+  assert.equal(extractBeneficiary("envoie 5000 pour tanti Adjoua"), "Adjoua");
+  assert.equal(extractBeneficiary("envoie 5000 à mon frère Koffi"), "Koffi");
+  // Faute de nom derrière, le titre sert de nom : sinon l'agent demanderait « à qui ? » et la seule
+  // réponse possible serait le même mot.
+  assert.equal(extractBeneficiary("envoie 5000 à tonton"), "Tonton");
+  assert.equal(extractBeneficiary("envoie 5000 à monsieur"), "Monsieur");
+  // Même chose en réponse à « à qui ? ».
+  assert.equal(extractBeneficiary("monsieur Diallo", { bare: true }), "Diallo");
+  assert.equal(extractBeneficiary("tonton", { bare: true }), "Tonton");
 });
 
 test("envoyer : un numéro de téléphone devient le bénéficiaire, avec ou sans indicatif", () => {

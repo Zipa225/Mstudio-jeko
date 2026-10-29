@@ -57,6 +57,12 @@ export const formatPhone = (phone: string): string => phone.replace(/(\d{2})(?=\
 
 const MARKERS = new Set(["a", "pour", "chez", "vers"]);
 const FILLERS = new Set(["mon", "ma", "numero", "num", "de", "du"]);
+/**
+ * Titres et appellations qui précèdent le nom : « à monsieur Diallo » doit rendre « Diallo », pas « Monsieur ».
+ * Faute de nom derrière, le titre sert lui-même de nom (« à tonton » rend « Tonton ») : sinon l'agent redemanderait
+ * « à qui ? » et la seule réponse possible serait le même mot.
+ */
+const TITRES = new Set(["monsieur", "madame", "mademoiselle", "tonton", "tanti", "tantie", "papa", "maman", "frere", "soeur"]);
 const STOP = new Set([
   "le", "la", "les", "l", "un", "une", "des", "mon", "ma", "mes", "ton", "ta", "numero", "num",
   "par", "wave", "orange", "mtn", "moov", "money", "francs", "franc", "fcfa", "cfa", "xof",
@@ -90,16 +96,27 @@ export function extractBeneficiary(text: string, options: { bare?: boolean } = {
   for (let i = 0; i < words.length; i++) {
     if (!MARKERS.has(norm[i])) continue;
     let j = i + 1;
-    while (j < words.length && FILLERS.has(norm[j])) j++;
-    const name = nameFrom(words[j]);
+    let titre: string | undefined;
+    while (j < words.length && (FILLERS.has(norm[j]) || TITRES.has(norm[j]))) {
+      if (TITRES.has(norm[j])) titre ??= words[j];
+      j++;
+    }
+    const name = nameFrom(words[j]) ?? nameFrom(titre);
     if (name) return name;
   }
   if (options.bare) {
+    let titre: string | undefined;
     for (const w of words) {
       if (CONTRACTION.test(w)) continue;
+      if (TITRES.has(normalize(w))) {
+        titre ??= w;
+        continue;
+      }
       const name = nameFrom(w);
       if (name) return name;
     }
+    const name = nameFrom(titre);
+    if (name) return name;
   }
   return undefined;
 }
@@ -137,6 +154,19 @@ export function isNo(text: string): boolean {
 // ---------------------------------------------------------------------------
 
 const COLLECT_VERBS = new Set(["encaisse", "encaisser", "encaissez", "encaissement"]);
+/**
+ * Encaissements bâtis sur « payer » ou « devoir » : c'est le client qui paie le marchand. Une vendeuse dit « fais
+ * payer » bien plus souvent que « encaisse ».
+ * Des expressions entières, jamais le seul mot « payer », parce que « je dois payer » et « paye Koffi » sont des
+ * envois : seul l'entourage dit qui paie qui. Pour la même raison, « fait payer » (passé) et « vais payer »
+ * (le marchand) n'y sont pas.
+ */
+const COLLECT_PHRASES = [
+  "fais payer", "fais moi payer", "fais lui payer", "faire payer", "faites payer",
+  "demande de paiement", "demande le paiement", "demande un paiement", "demander le paiement",
+  "doit payer", "doivent payer", "va payer", "vont payer",
+  "me doit", "me doivent", "nous doit", "nous doivent",
+];
 const SEND_VERBS = new Set([
   "envoie", "envoyer", "envoyez", "envoi", "transfere", "transferer", "transferez", "transfert", "vire", "virer", "verse", "verser",
 ]);
@@ -199,11 +229,14 @@ export function parseIntent(rawText: string): Intent {
 
   const amount = parseAmount(norm);
   const verb = toks.find((t) => COLLECT_VERBS.has(t) || SEND_VERBS.has(t));
+  // Cherché seulement faute de verbe : quand les deux sont là, le verbe est le signal le plus clair et il décide.
+  // Sur `norm` et non sur le texte brut : la recherche doit voir le même texte que celle du verbe, donc réparé.
+  const collectPhrase = verb === undefined && hasAny(` ${norm} `, COLLECT_PHRASES);
   const question = isQuestion(norm);
 
   // « comment envoyer de l'argent ? » est une question, pas un ordre : un ordre porte un montant.
-  if (verb && !(question && amount === undefined)) {
-    const intent: Intent = { kind: COLLECT_VERBS.has(verb) ? "collect" : "send" };
+  if ((verb !== undefined || collectPhrase) && !(question && amount === undefined)) {
+    const intent: Intent = { kind: verb === undefined || COLLECT_VERBS.has(verb) ? "collect" : "send" };
     if (amount !== undefined) intent.amount = amount;
     const wallet = extractWallet(norm);
     if (wallet) intent.wallet = wallet;

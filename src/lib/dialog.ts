@@ -116,7 +116,8 @@ const plain = (text: string, awaitingConfirm = false, tone?: Tone) =>
   turn({ reply: text, speech: text }, awaitingConfirm, undefined, tone);
 
 const REASON: Record<string, string> = {
-  new_beneficiary: "c'est un nouveau numéro pour toi",
+  // « contact » et non « numéro » : elle a souvent donné un nom, pas un numéro.
+  new_beneficiary: "c'est un nouveau contact",
   amount_ratio: "c'est beaucoup plus que d'habitude",
   ceiling: "ça dépasse ton plafond",
   night: "il est tard",
@@ -134,7 +135,7 @@ function spokenReason(a: RiskAssessment): string {
     .map((f) => REASON[f.id] ?? f.label.toLowerCase())
     .filter(Boolean);
   if (!parts.length) return "Je préfère vérifier avec toi.";
-  const sentence = parts.join(" et ");
+  const sentence = parts.join(", et ");
   return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
 }
 
@@ -277,13 +278,23 @@ export function createDialog(deps: DialogDeps): AnyDialog {
     p.operationId = op.id;
     s.pending = p;
 
-    const lead = a.decision === "verify" ? `Attention. ${spokenReason(a)} ` : "";
-    const tone: Tone = a.decision === "verify" ? "verify" : "ask";
+    /*
+     * Quand il y a un doute, l'ordre compte plus que les mots : le montant et le destinataire d'abord, la raison
+     * ensuite, une question fermée pour finir. À l'oral on ne relit pas, et ce qu'elle doit vérifier ne peut pas
+     * arriver en troisième position, derrière deux propositions d'explication.
+     * Pas de « Attention » en ouverture : le mot ne porte aucune information et peut la crisper pour rien.
+     * La question ne porte que sur l'opération. Demander « c'est bien toi qui décides ? » mélangeait deux
+     * questions dans un seul oui ; le signalement d'une contrainte passe par le mot secret, pas par là.
+     */
+    const doute = a.decision === "verify";
+    const raison = doute ? `${spokenReason(a)} ` : "";
+    const tone: Tone = doute ? "verify" : "ask";
     if (p.kind === "collect") {
-      return turn(line`${lead}Tu veux encaisser ${amt(amount)} francs${via(p.wallet)}. Tu confirmes ?`, true, undefined, tone);
+      if (doute) return turn(line`${amt(amount)} francs${via(p.wallet)}. ${raison}J'encaisse ?`, true, undefined, tone);
+      return turn(line`Tu veux encaisser ${amt(amount)} francs${via(p.wallet)}. Tu confirmes ?`, true, undefined, tone);
     }
-    const ask = a.decision === "verify" ? "C'est bien toi qui décides ?" : "Tu confirmes ?";
-    return turn(line`${lead}Tu envoies ${amt(amount)} francs${via(p.wallet)} à ${who(p)}. ${ask}`, true, undefined, tone);
+    if (doute) return turn(line`${amt(amount)} francs${via(p.wallet)} pour ${who(p)}. ${raison}Je l'envoie ?`, true, undefined, tone);
+    return turn(line`Tu envoies ${amt(amount)} francs${via(p.wallet)} à ${who(p)}. Tu confirmes ?`, true, undefined, tone);
   }
 
   // --- Exécution : seulement après un oui ------------------------------------

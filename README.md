@@ -229,7 +229,7 @@ un **micro-casque**.
 | # | On dit | L'assistant répond | Sur le grand écran |
 | --- | --- | --- | --- |
 | 1 | « Encaisse cinq mille francs par Wave. » puis « Oui. » | « Tu veux encaisser 5 000 francs par Wave. Tu confirmes ? » puis « C'est lancé. Le client peut scanner et payer. » Le client « paie » (bouton « Simuler : le client a payé » avec la fausse caisse ; un vrai paiement en mode réel) ; la voix annonce « Paiement reçu. 5 000 francs par Wave. » | Un encaissement accepté (score 0) |
-| 2 | « Envoie cent cinquante mille francs à *Prénom neuf*. » | « Attention. C'est beaucoup plus que d'habitude et c'est un nouveau numéro pour toi. Tu envoies 150 000 francs à *Prénom neuf*. C'est bien toi qui décides ? » | Un transfert « à vérifier » (score 45) |
+| 2 | « Envoie cent cinquante mille francs à *Prénom neuf*. » | « 150 000 francs pour *Prénom neuf*. C'est beaucoup plus que d'habitude, et c'est un nouveau contact. Je l'envoie ? » | Un transfert « à vérifier » (score 45) |
 | 3 | « Oui, c'est bon, » **+ la phrase contenant le mot secret** | « C'est envoyé. 150 000 francs à *Prénom neuf*. » (identique à un succès) | **Bannière rouge « Contrainte signalée »**, score et raisons ; compteur « Retenues » à 1 ; aucune somme transférée |
 | 4 | « Envoie deux cent cinquante mille francs à *Prénom neuf*. » | « Je ne peux pas faire ça maintenant, pour ta sécurité. Un conseiller Jèko va te rappeler. » | Alerte « Opération bloquée : rappel à faire » (score 90) |
 | 5 | « J'ai atteint la limite de 200 000, comment augmenter mon plafond ? » | La réponse du support, **avec sa source**, et le passage à un conseiller | Alerte « Question passée à un conseiller » |
@@ -267,7 +267,7 @@ vérifié par la voix »). Utilisez alors un autre prénom neuf pour rejouer ens
 ## Tests et qualité
 
 ```bash
-npm test             # 411 tests, sans réseau externe (faux serveurs HTTP locaux pour AethexAI, Argus et Jèko)
+npm test             # 414 tests, sans réseau externe (faux serveurs HTTP locaux pour AethexAI, Argus et Jèko)
 npm run typecheck    # TypeScript strict
 npm run build
 ```
