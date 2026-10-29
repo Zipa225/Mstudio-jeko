@@ -142,6 +142,7 @@ const SEND_VERBS = new Set([
 const QUESTION_WORDS = new Set(["comment", "pourquoi", "quoi", "quel", "quelle", "quels", "quelles", "combien"]);
 const SUPPORT_KEYWORDS = [
   "plafond", "limite", "frais", "commission", "tarif", "kyc", "verification", "inscription", "compte", "jekobox", "aide", "probleme",
+  "pays", "horaires", "contact", "conseiller", "virement", "reversement", "abonnement", "support",
 ];
 const SUMMARY = [
   /\bbilan\b/,

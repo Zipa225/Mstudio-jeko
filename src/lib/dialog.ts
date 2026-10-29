@@ -12,6 +12,7 @@ import {
   extractBeneficiary, extractPhone, extractWallet, formatPhone, isNo, isYes, parseIntent, WALLET_LABEL, type Intent, type Wallet,
 } from "./intent";
 import type { AsyncCashier, AsyncRisk, Cashier, RiskAssessment, RiskRequest, SyncRisk } from "./ports";
+import { findAnswer, summarize } from "./kb";
 import { createLocalRisk } from "./riskLocal";
 import type { Operation, Pending, Session, Store } from "./store";
 import { formatXof } from "./text";
@@ -27,6 +28,8 @@ export interface TurnResult {
   awaitingConfirm: boolean;
   /** `ask` : confirmation simple. `verify` : doute d'Argus. `success` : fait. `refusal` : refus. `info` : le reste. */
   tone?: Tone;
+  /** D'où vient une réponse du support (règle RG-23 : toute réponse du support cite sa source). */
+  source?: string;
   /** `url` : le lien de paiement du client (caisse réelle). */
   payment?: { id: string; amount: number; wallet?: Wallet; url?: string };
 }
@@ -394,6 +397,28 @@ export function createDialog(deps: DialogDeps): AnyDialog {
     return advance(s, p);
   }
 
+  /** Une question d'assistance : réponse sourcée de la base, ou passage à un conseiller avec un résumé (RG-23). */
+  function supportTurn(question: string): TurnResult {
+    const found = findAnswer(question);
+    if (found) {
+      const { entry } = found;
+      if (entry.handoff) handOff(question, `Réponse partielle donnée (${entry.id}).`);
+      return { reply: entry.reply, speech: entry.speech, awaitingConfirm: false, tone: "info", source: entry.source };
+    }
+    handOff(question, "Hors de la base du support.");
+    const reply = "Je n'ai pas la réponse à ça. Je passe ta question à un conseiller Jèko, qui te répondra.";
+    return { reply, speech: reply, awaitingConfirm: false, tone: "info" };
+  }
+
+  function handOff(question: string, why: string) {
+    store.addAlert({
+      level: "info",
+      type: "handoff",
+      title: "Question passée à un conseiller",
+      detail: `Le marchand a demandé : « ${summarize(question)} ». ${why} Un conseiller doit lui répondre.`,
+    });
+  }
+
   function handleIdle(s: Session, text: string): Maybe<TurnResult> {
     const intent = parseIntent(text);
     switch (intent.kind) {
@@ -406,8 +431,7 @@ export function createDialog(deps: DialogDeps): AnyDialog {
         return turn(line`Aujourd'hui, tu as encaissé ${amt(total)} francs, en ${amt(count)} paiement${count > 1 ? "s" : ""}.`);
       }
       case "support":
-        // Provisoire : la base de réponses sourcées arrive avec feature/support-prospects.
-        return plain("Je n'ai pas la réponse à ça. Un conseiller Jèko peut t'aider dans l'application.");
+        return supportTurn(text);
       default:
         if (isYes(text) || isNo(text)) return plain(NOTHING_TO_CONFIRM);
         return plain("Je n'ai pas bien compris. Tu peux dire par exemple : encaisse cinq mille francs, ou : combien j'ai encaissé aujourd'hui ?");

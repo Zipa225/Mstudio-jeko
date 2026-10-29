@@ -86,6 +86,12 @@ export function micErrorMessage(name: string | undefined, secureContext: boolean
 /** « 10 000 » ne doit pas se couper en fin de ligne : on lie les groupes de chiffres par une espace insécable. */
 export const keepNumbersTogether = (text: string): string => text.replace(/(\d) (?=\d{3}(?!\d))/g, "$1 ");
 
+/** « Source : … » sous une réponse du support. */
+export const sourceLine = (source: string | undefined): string | undefined => {
+  const text = source?.trim();
+  return text ? `Source : ${text}` : undefined;
+};
+
 export function heardLine(heard: string | undefined): string | undefined {
   const text = heard?.trim();
   return text ? `Tu as dit : « ${text} »` : undefined;
