@@ -65,6 +65,20 @@ export const jekoModeFrom = (health: { jeko?: unknown } | undefined): "live" | "
 /** `?test=1` : mode clavier, sans micro. */
 export const isTestMode = (search: string): boolean => new URLSearchParams(search).get("test") === "1";
 
+/** `?debug=1` : rejoue le son envoyé à la reconnaissance vocale, avec son niveau, pour comprendre une transcription fausse. */
+export const isDebugMode = (search: string): boolean => new URLSearchParams(search).get("debug") === "1";
+
+/** Une ligne lisible sur l'enregistrement : durée, volume d'origine, amplification appliquée, et un diagnostic. */
+export function describeRecording(stats: { durationSeconds: number; peak: number; gain: number }): string {
+  const fmt = (n: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(n);
+  const quality =
+    stats.peak < 0.004 ? "quasi silencieux : le micro n'a presque rien capté"
+    : stats.peak < 0.05 ? "voix très basse : rapproche le micro"
+    : stats.gain > 4 ? "voix basse (remontée automatiquement)"
+    : "volume correct";
+  return `${fmt(stats.durationSeconds)} s · crête ${fmt(stats.peak)} · amplifié ×${fmt(stats.gain)} · ${quality}`;
+}
+
 /** Identifiant de session de la page : lettres, chiffres et tirets, comme l'attend le serveur. */
 export const newSessionId = (randomBytes: ArrayLike<number>): string =>
   `awa-${Array.from(randomBytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;

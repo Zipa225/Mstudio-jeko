@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { startRecording, type Recording } from "../marchand/audio";
-import { micErrorMessage, sourceLine, voiceModeFrom, type VoiceMode } from "../marchand/view";
+import { describeRecording, isDebugMode, micErrorMessage, sourceLine, voiceModeFrom, type VoiceMode } from "../marchand/view";
 import styles from "./prospect.module.css";
 
 interface Message {
@@ -40,6 +40,8 @@ export default function ProspectPage() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [notice, setNotice] = useState<string | undefined>();
+  const [debugMode, setDebugMode] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<{ url: string; summary: string } | undefined>();
   const started = useRef(false);
   const recordingRef = useRef<Recording | null>(null);
   const playerRef = useRef<HTMLAudioElement | null>(null);
@@ -118,6 +120,7 @@ export default function ProspectPage() {
       }
     }
     setSessionId(id);
+    setDebugMode(isDebugMode(window.location.search));
     void (async () => {
       let mode: VoiceMode = "browser";
       try {
@@ -174,6 +177,12 @@ export default function ProspectPage() {
         setNotice("Je n'ai pas entendu. Réessaie.");
         return;
       }
+      if (debugMode) {
+        setDebugInfo((old) => {
+          if (old) URL.revokeObjectURL(old.url);
+          return { url: URL.createObjectURL(new Blob([heard.wav], { type: "audio/wav" })), summary: describeRecording(heard.stats) };
+        });
+      }
       await sendAudio(heard.wav);
     } catch (e) {
       recordingRef.current = null;
@@ -212,6 +221,13 @@ export default function ProspectPage() {
       </section>
 
       {notice && <p className={styles.notice} role="alert">{notice}</p>}
+
+      {debugMode && debugInfo && (
+        <div className={styles.notice}>
+          <p style={{ margin: "0 0 8px" }}>Dernier enregistrement envoyé : {debugInfo.summary}</p>
+          <audio controls src={debugInfo.url} style={{ width: "100%" }} />
+        </div>
+      )}
 
       <form className={styles.form} onSubmit={onSubmit}>
         {voiceMode === "aethex" && (

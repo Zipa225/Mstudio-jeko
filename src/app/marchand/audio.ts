@@ -78,6 +78,48 @@ export function rmsOf(samples: Float32Array): number {
   return Math.sqrt(sum / samples.length);
 }
 
+export interface AudioStats {
+  durationSeconds: number;
+  /** Plus grand niveau avant normalisation (0 à 1). */
+  peak: number;
+  /** Niveau moyen (RMS) avant normalisation. */
+  rms: number;
+  /** Amplification appliquée avant l'envoi. */
+  gain: number;
+}
+
+/** Amplification maximale : au-delà, on gonflerait surtout le bruit. */
+export const MAX_GAIN = 40;
+/** Niveau visé pour la crête de la voix après normalisation. */
+export const TARGET_PEAK = 0.8;
+/** En dessous de ce niveau, il n'y a que du silence ou du bruit : on n'amplifie pas. */
+const SILENCE_PEAK = 0.004;
+
+/**
+ * Remonte le volume d'un enregistrement trop faible, sans jamais le baisser. Le moteur de reconnaissance d'AethexAI perd des
+ * mots (ou en invente) quand la voix est basse, surtout avec du bruit : on vise une crête de voix à 0,8. La crête est lue au
+ * 99,5e centile, pour qu'un claquement isolé ne décide pas du volume de toute la phrase.
+ */
+export function normalizeLevel(samples: Float32Array): { samples: Float32Array; stats: Omit<AudioStats, "durationSeconds"> } {
+  if (samples.length === 0) return { samples, stats: { peak: 0, rms: 0, gain: 1 } };
+  const abs = new Float32Array(samples.length);
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    abs[i] = Math.abs(samples[i]);
+    if (abs[i] > peak) peak = abs[i];
+  }
+  const rms = rmsOf(samples);
+  if (peak < SILENCE_PEAK) return { samples, stats: { peak, rms, gain: 1 } };
+  abs.sort();
+  const robust = abs[Math.min(abs.length - 1, Math.floor(abs.length * 0.995))] || peak;
+  const gain = Math.min(MAX_GAIN, TARGET_PEAK / robust);
+  // Déjà au bon niveau (ou plus fort) : on laisse le son tel quel, sans le baisser ni le recopier.
+  if (gain < 1.1) return { samples, stats: { peak, rms, gain: 1 } };
+  const out = new Float32Array(samples.length);
+  for (let i = 0; i < samples.length; i++) out[i] = Math.max(-1, Math.min(1, samples[i] * gain));
+  return { samples: out, stats: { peak, rms, gain } };
+}
+
 export type StopReason = "silence" | "max" | "no_speech";
 
 export interface SilenceOptions {
@@ -161,9 +203,11 @@ export function createSilenceDetector(options: SilenceOptions = DEFAULT_SILENCE)
 // ---------------------------------------------------------------------------
 
 export interface RecordingResult {
-  /** WAV 16 kHz mono, prêt à être envoyé. */
+  /** WAV 16 kHz mono, volume normalisé, prêt à être envoyé. */
   wav: ArrayBuffer;
   reason: StopReason | "manual";
+  /** Niveau du son enregistré : sert au mode `?debug=1` pour comprendre une mauvaise transcription. */
+  stats: AudioStats;
 }
 
 export interface Recording {
@@ -173,58 +217,77 @@ export interface Recording {
   result: Promise<RecordingResult | undefined>;
 }
 
-const MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"];
+/** Du son brut au fichier envoyé : mono, 16 kHz, volume remonté. Pure, donc testée sans micro. */
+export function prepareForUpload(channels: Float32Array[], sampleRate: number): { wav: ArrayBuffer; stats: AudioStats } {
+  const mono = resample(mixToMono(channels), sampleRate, TARGET_SAMPLE_RATE);
+  const { samples, stats } = normalizeLevel(mono);
+  return { wav: encodeWav(samples, TARGET_SAMPLE_RATE), stats: { ...stats, durationSeconds: samples.length / TARGET_SAMPLE_RATE } };
+}
 
+/**
+ * On enregistre le son BRUT du micro (échantillons PCM), pas un fichier compressé : pas de compression ni de décodage
+ * intermédiaire qui abîment la voix. Le contrôle automatique du gain remonte les voix basses ; l'annulation d'écho évite
+ * que le micro réentende la voix de l'assistant.
+ */
 export async function startRecording(options: SilenceOptions = DEFAULT_SILENCE): Promise<Recording> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+  });
   const AudioCtor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   const context = new AudioCtor();
+  if (context.state === "suspended") await context.resume().catch(() => undefined);
+  const source = context.createMediaStreamSource(stream);
+
   const analyser = context.createAnalyser();
   analyser.fftSize = 1024;
-  context.createMediaStreamSource(stream).connect(analyser);
+  source.connect(analyser);
 
-  const mimeType = MIME_CANDIDATES.find((m) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m));
-  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-  const chunks: Blob[] = [];
-  recorder.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data);
+  const chunks: Float32Array[] = [];
+  const processor = context.createScriptProcessor(4096, 1, 1);
+  processor.onaudioprocess = (e) => {
+    chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
   };
+  source.connect(processor);
+  processor.connect(context.destination); // sortie muette : le processeur n'écrit rien, mais doit être relié pour tourner
 
   const detector = createSilenceDetector(options);
   const level = new Float32Array(analyser.fftSize);
-  let reason: StopReason | "manual" = "manual";
+  let finished = false;
+  let settle: (value: RecordingResult | undefined) => void = () => undefined;
+  const result = new Promise<RecordingResult | undefined>((resolve) => {
+    settle = resolve;
+  });
+
   const finish = (why: StopReason | "manual") => {
-    reason = why;
-    if (recorder.state !== "inactive") recorder.stop();
+    if (finished) return;
+    finished = true;
+    clearInterval(timer);
+    processor.onaudioprocess = null;
+    try {
+      source.disconnect();
+      processor.disconnect();
+    } catch {
+      /* déjà déconnecté */
+    }
+    stream.getTracks().forEach((t) => t.stop());
+    const sampleRate = context.sampleRate;
+    void context.close();
+
+    if (why === "no_speech" || chunks.length === 0) return settle(undefined);
+    const all = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+    let offset = 0;
+    for (const c of chunks) {
+      all.set(c, offset);
+      offset += c.length;
+    }
+    settle({ ...prepareForUpload([all], sampleRate), reason: why });
   };
+
   const timer = setInterval(() => {
     analyser.getFloatTimeDomainData(level);
     const decision = detector.push(rmsOf(level), performance.now());
     if (decision.stop) finish(decision.reason);
   }, 100);
 
-  const release = () => {
-    clearInterval(timer);
-    stream.getTracks().forEach((t) => t.stop());
-  };
-
-  const result = new Promise<RecordingResult | undefined>((resolve) => {
-    recorder.onstop = async () => {
-      release();
-      try {
-        if (reason === "no_speech" || chunks.length === 0) return resolve(undefined);
-        const decoded = await context.decodeAudioData(await new Blob(chunks).arrayBuffer());
-        const channels = Array.from({ length: decoded.numberOfChannels }, (_v, i) => decoded.getChannelData(i));
-        const mono = resample(mixToMono(channels), decoded.sampleRate, TARGET_SAMPLE_RATE);
-        resolve({ wav: encodeWav(mono, TARGET_SAMPLE_RATE), reason });
-      } catch {
-        resolve(undefined);
-      } finally {
-        void context.close();
-      }
-    };
-  });
-
-  recorder.start();
   return { stop: () => finish("manual"), result };
 }
