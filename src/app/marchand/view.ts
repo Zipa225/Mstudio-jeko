@@ -1,7 +1,7 @@
 // Aides pures de l'écran de la vendeuse : états, textes, choix d'affichage. Sans React, donc testables.
 
 import type { Tone, TurnResult } from "../../lib/dialog";
-import { CLIPPING_LIMIT } from "./audio";
+import { CLIPPING_LIMIT, type MicProfile } from "./audio";
 
 /** Ce que fait l'écran : au repos, il écoute, il réfléchit, il parle. */
 export type Phase = "idle" | "listening" | "thinking" | "speaking";
@@ -106,6 +106,21 @@ export const demoPhrases = (name: string): DemoPhrase[] => [
 
 /** `?debug=1` : rejoue le son envoyé à la reconnaissance vocale, avec son niveau, pour comprendre une transcription fausse. */
 export const isDebugMode = (search: string): boolean => new URLSearchParams(search).get("debug") === "1";
+
+/**
+ * Un enregistrement saturé (voix déformée) est mal transcrit : on ne l'envoie pas, on le dit. Si le réglage utilise le gain
+ * automatique du navigateur (la cause habituelle), on le coupe pour l'essai suivant ; sinon on demande de baisser le volume.
+ * `undefined` : le son n'est pas saturé, on l'envoie.
+ */
+export function saturationAdvice(profile: MicProfile, stats: { clipped: number }): { message: string; nextProfile?: MicProfile } | undefined {
+  if (!(stats.clipped > CLIPPING_LIMIT)) return undefined;
+  if (profile === "standard" || profile === "sans_reduction") {
+    return { nextProfile: "sans_gain", message: "Ton micro sature, la voix est déformée : j'ai coupé le gain automatique. Redis ta phrase." };
+  }
+  return {
+    message: "Ton micro sature, la voix est déformée : baisse le volume du micro dans les réglages de ton appareil, ou éloigne-toi un peu. Puis redis ta phrase.",
+  };
+}
 
 /** Une ligne lisible sur l'enregistrement : durée, volume d'origine, amplification appliquée, et un diagnostic. */
 export function describeRecording(stats: { durationSeconds: number; peak: number; gain: number; clipped?: number }): string {

@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { POST as sttTest } from "../src/app/api/stt-test/route";
-import { isMicProfile, MIC_PROFILES, saveMicProfile, saveSttEngine, savedMicProfile, savedSttEngine } from "../src/app/marchand/audio";
+import { CLIPPING_LIMIT, isMicProfile, MIC_PROFILES, saveMicProfile, saveSttEngine, savedMicProfile, savedSttEngine } from "../src/app/marchand/audio";
+import { saturationAdvice } from "../src/app/marchand/view";
 import { bestProfile, chooseEngine, EXPECTED_PHRASE, phraseScore, scoreLabel } from "../src/app/micro/score";
 import { AethexError } from "../src/lib/aethex";
 import type { VoiceService } from "../src/lib/ports";
@@ -122,6 +123,28 @@ test("moteur : le choix se mémorise, valeur inconnue ou stockage absent donnent
   } finally {
     g.localStorage = saved;
   }
+});
+
+test("saturation : un son déformé n'est pas envoyé, le gain automatique est coupé", () => {
+  const sat = { clipped: 0.2 };
+  for (const profile of ["standard", "sans_reduction"] as const) {
+    const a = saturationAdvice(profile, sat)!;
+    assert.equal(a.nextProfile, "sans_gain", profile);
+    assert.match(a.message, /sature/);
+    assert.match(a.message, /gain automatique/);
+  }
+  for (const profile of ["sans_gain", "brut"] as const) {
+    const a = saturationAdvice(profile, sat)!;
+    assert.equal(a.nextProfile, undefined, "déjà sans gain automatique : on ne change pas de réglage");
+    assert.match(a.message, /baisse le volume du micro/);
+  }
+});
+
+test("saturation : un son propre, ou à la limite exacte, est envoyé", () => {
+  assert.equal(saturationAdvice("standard", { clipped: 0 }), undefined);
+  assert.equal(saturationAdvice("standard", { clipped: CLIPPING_LIMIT }), undefined, "à la limite : pas encore saturé");
+  assert.ok(saturationAdvice("standard", { clipped: CLIPPING_LIMIT + 0.001 }));
+  assert.equal(saturationAdvice("brut", { clipped: Number.NaN }), undefined, "mesure illisible : on envoie plutôt que de bloquer");
 });
 
 // --- Les réglages de micro -------------------------------------------------------------------------
