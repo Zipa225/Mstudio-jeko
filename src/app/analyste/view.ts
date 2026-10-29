@@ -1,7 +1,7 @@
 // Aides pures de l'écran analyste : libellés, choix de la bannière, compteurs. Sans React, donc testables.
 
 import type { Decision, Factor } from "../../lib/risk";
-import type { Alert, Operation, OperationStatus } from "../../lib/store";
+import type { Alert, Lead, LeadInterest, Operation, OperationStatus } from "../../lib/store";
 
 export type DuressState = "disabled" | "weak" | "active";
 
@@ -17,6 +17,19 @@ export interface AnalystState {
   criticalAlerts: number;
   operations: Operation[];
   alerts: Alert[];
+  /** Fiches des prospects, la plus récemment mise à jour d'abord (`ts` y vaut la date de mise à jour). */
+  leads: Lead[];
+}
+
+export const INTEREST_LABEL: Record<LeadInterest, string> = { chaud: "Chaud", tiede: "Tiède", froid: "Froid" };
+
+/** Le ton de la pastille d'intérêt : on n'ajoute pas de couleur, le rouge reste réservé à la bannière. */
+export const INTEREST_TONE: Record<LeadInterest, "held" | "wait" | "neutral"> = { chaud: "held", tiede: "wait", froid: "neutral" };
+
+/** Les prospects chauds d'abord, puis tièdes, puis froids ; à intérêt égal, le plus récent d'abord. */
+export function sortLeads(leads: readonly Lead[]): Lead[] {
+  const rank: Record<LeadInterest, number> = { chaud: 0, tiede: 1, froid: 2 };
+  return [...leads].sort((a, b) => rank[a.interest] - rank[b.interest] || b.updatedAt - a.updatedAt);
 }
 
 export const STATUS_LABEL: Record<OperationStatus, string> = {

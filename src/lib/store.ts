@@ -39,7 +39,7 @@ export interface Alert {
   id: string;
   ts: number;
   level: "info" | "warning" | "critical";
-  type: "verified" | "blocked" | "duress" | "failed" | "webhook" | "degraded" | "handoff";
+  type: "verified" | "blocked" | "duress" | "failed" | "webhook" | "degraded" | "handoff" | "lead";
   title: string;
   detail: string;
   operationId?: string;
@@ -75,9 +75,30 @@ export interface Session {
   pending?: Pending;
 }
 
+export type LeadInterest = "chaud" | "tiede" | "froid";
+
+/** Fiche d'un prospect (F12) : ce qu'un visiteur a dit à l'assistant, et l'intérêt qu'on en déduit. Aucun contact n'est collecté. */
+export interface Lead {
+  id: string;
+  sessionId: string;
+  ts: number;
+  updatedAt: number;
+  activity?: string;
+  volume?: string;
+  payments?: string;
+  city?: string;
+  /** Le visiteur a-t-il demandé à être rappelé par un conseiller ? */
+  wantsCall?: boolean;
+  /** Question que la base du support n'a pas pu traiter. */
+  question?: string;
+  interest: LeadInterest;
+  summary: string;
+}
+
 /** Panier moyen utilisé quand le marchand n'a encore aucun encaissement payé. */
 export const DEFAULT_AVG_TICKET = 5000;
 export const BURST_WINDOW_MS = 10 * 60_000;
+const MAX_LEADS = 200;
 
 /** Encaissements d'exemple (données simulées) : panier moyen de 4 500 FCFA. */
 const SEED_AMOUNTS = [2500, 5000, 3000, 7500, 1500, 4000, 6000, 2000, 8000, 5500];
@@ -88,6 +109,7 @@ export class Store {
   merchant!: Merchant;
   operations: Operation[] = [];
   alerts: Alert[] = [];
+  leads: Lead[] = [];
   private sessions = new Map<string, Session>();
 
   constructor(private readonly clock: () => Date = () => new Date(), seed = true) {
@@ -102,6 +124,7 @@ export class Store {
   reset(seed = true): void {
     this.operations = [];
     this.alerts = [];
+    this.leads = [];
     this.sessions = new Map();
     this.merchant = {
       name: "Awa (personnage de démonstration)",
@@ -162,6 +185,17 @@ export class Store {
     const alert: Alert = { id: randomUUID(), ts: this.clock().getTime(), ...data };
     this.alerts.push(alert);
     return alert;
+  }
+
+  /** Crée ou met à jour la fiche d'un prospect (une fiche par session). Les fiches les plus anciennes sont oubliées au-delà de 200. */
+  upsertLead(sessionId: string, patch: Omit<Lead, "id" | "sessionId" | "ts" | "updatedAt">): Lead {
+    const now = this.clock().getTime();
+    const existing = this.leads.find((l) => l.sessionId === sessionId);
+    if (existing) return Object.assign(existing, patch, { updatedAt: now });
+    const lead: Lead = { id: randomUUID(), sessionId, ts: now, updatedAt: now, ...patch };
+    this.leads.push(lead);
+    if (this.leads.length > MAX_LEADS) this.leads.shift();
+    return lead;
   }
 
   /** Panier moyen : moyenne des encaissements payés. */

@@ -4,14 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { formatXof } from "../../lib/text";
 import styles from "./analyste.module.css";
 import {
-  ALERT_TONE_LABEL, alertTone, counters, DECISION_LABEL, duressNotice, factorChip, formatClock, KIND_LABEL, operationTarget,
-  pickBanner, STATUS_LABEL, STATUS_TONE, type AnalystState,
+  ALERT_TONE_LABEL, alertTone, counters, DECISION_LABEL, duressNotice, factorChip, formatClock, INTEREST_LABEL, INTEREST_TONE,
+  KIND_LABEL, operationTarget, pickBanner, sortLeads, STATUS_LABEL, STATUS_TONE, type AnalystState,
 } from "./view";
 
 const POLL_MS = 1200;
 /** Sur le grand écran, on garde l'essentiel : les éléments les plus récents. */
 const MAX_ALERTS = 5;
 const MAX_OPERATIONS = 8;
+const MAX_LEADS = 6;
 
 function Lock() {
   return (
@@ -243,6 +244,25 @@ export default function AnalystePage() {
           </div>
         </section>
       </div>
+
+      <section className={`${styles.panel} ${styles.leadsPanel}`} aria-labelledby="prospects">
+        <h2 id="prospects" className={styles.panelTitle}>Prospects</h2>
+        {(state.leads ?? []).length === 0 ? (
+          <p className={styles.empty}>Aucun prospect pour le moment. La page /prospect les reçoit.</p>
+        ) : (
+          <ul className={styles.leads}>
+            {sortLeads(state.leads).slice(0, MAX_LEADS).map((l) => (
+              <li key={l.id} className={styles.lead}>
+                <div className={styles.alertHead}>
+                  <span className={`${styles.pill} ${styles[INTEREST_TONE[l.interest]]}`}>{INTEREST_LABEL[l.interest]}</span>
+                  <span className={styles.time}>{formatClock(l.updatedAt)}</span>
+                </div>
+                <p className={styles.alertDetail}>{l.summary}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <footer className={styles.footer}>
         <span>Mise à jour automatique toutes les 1,2 seconde. Score illustratif sur six critères, pas le moteur Argus complet.</span>

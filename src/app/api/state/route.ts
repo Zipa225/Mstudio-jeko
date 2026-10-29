@@ -35,6 +35,7 @@ export async function GET() {
       criticalAlerts: store.alerts.filter((a) => a.level === "critical").length,
       operations: newestFirst(store.operations).slice(0, 40),
       alerts: newestFirst(store.alerts).slice(0, 20),
+      leads: newestFirst(store.leads.map((l) => ({ ...l, ts: l.updatedAt }))).slice(0, 20),
     });
   });
 }
