@@ -337,6 +337,15 @@
   cursor: wait;
 }
 
+/* QR que le client scanne (simulation) : assez grand pour être scanné depuis un autre téléphone, sans dépasser l'écran. */
+.clientQr {
+  display: block;
+  width: min(100%, 300px);
+  height: auto;
+  margin: 0 auto;
+  border-radius: var(--rayon-carte);
+}
+
 /* Panneau du présentateur (?demo=1) : visible seulement en démonstration, jamais pour la commerçante. */
 .demoPanel {
   background: var(--carte);

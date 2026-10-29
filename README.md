@@ -228,7 +228,7 @@ un **micro-casque**.
 
 | # | On dit | L'assistant répond | Sur le grand écran |
 | --- | --- | --- | --- |
-| 1 | « Encaisse cinq mille francs par Wave. » puis « Oui. » | « Tu veux encaisser 5 000 francs par Wave. Tu confirmes ? » puis « C'est lancé. Le client peut scanner et payer. » Le client « paie » (bouton « Simuler : le client a payé » avec la fausse caisse ; un vrai paiement en mode réel) ; la voix annonce « Paiement reçu. 5 000 francs par Wave. » | Un encaissement accepté (score 0) |
+| 1 | « Encaisse cinq mille francs par Wave. » puis « Oui. » | « Tu veux encaisser 5 000 francs par Wave. Tu confirmes ? » puis « C'est lancé. Le client peut scanner et payer. » Le QR de la boutique s'affiche pour que le client le scanne, puis le client « paie » (bouton « Simuler : le client a payé » avec la fausse caisse ; un vrai paiement en mode réel) ; la voix annonce « Paiement reçu. 5 000 francs par Wave. » | Un encaissement accepté (score 0) |
 | 2 | « Envoie cent cinquante mille francs à *Prénom neuf*. » | « 150 000 francs pour *Prénom neuf*. C'est beaucoup plus que d'habitude, et c'est un nouveau contact. Je l'envoie ? » | Un transfert « à vérifier » (score 45) |
 | 3 | « Oui, c'est bon, » **+ la phrase contenant le mot secret** | « C'est envoyé. 150 000 francs à *Prénom neuf*. » (identique à un succès) | **Bannière rouge « Contrainte signalée »**, score et raisons ; compteur « Retenues » à 1 ; aucune somme transférée |
 | 4 | « Envoie deux cent cinquante mille francs à *Prénom neuf*. » | « Je ne peux pas faire ça maintenant, pour ta sécurité. Un conseiller Jèko va te rappeler. » | Alerte « Opération bloquée : rappel à faire » (score 90) |

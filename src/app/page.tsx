@@ -444,9 +444,14 @@ export default function MarchandPage() {
       )}
 
       {canSimulateClientPayment(result, demoMode, jekoLive) && (
-        <button type="button" className={styles.simulate} disabled={busy} onClick={() => void simulateClientPayment()}>
-          Simuler : le client a payé
-        </button>
+        <>
+          {/* Simulation : le QR de la boutique que le client scanne. Il ne porte pas le montant (c'est l'image fournie par l'équipe). */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className={styles.clientQr} src="/qr-client.png" alt="QR code que le client scanne pour payer" width={1284} height={1819} />
+          <button type="button" className={styles.simulate} disabled={busy} onClick={() => void simulateClientPayment()}>
+            Simuler : le client a payé
+          </button>
+        </>
       )}
 
       <div className={styles.micZone}>
