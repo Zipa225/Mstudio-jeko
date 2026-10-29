@@ -18,6 +18,7 @@
     "argus:down": "docker compose -f docker/argus/docker-compose.yml down",
     "argus:logs": "docker compose -f docker/argus/docker-compose.yml logs -f --tail=50",
     "argus:licence": "tsx scripts/argus-licence.ts",
+    "argus:regles": "tsx scripts/argus-regles.ts",
     "argus:test": "tsx scripts/test-argus.ts",
     "argus:seed": "tsx scripts/seed-argus.ts"
   },

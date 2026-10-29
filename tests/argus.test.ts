@@ -210,6 +210,42 @@ test("réponse : sans facteurs ni raison, l'examen reste valable", async () => {
   assert.deepEqual(a, { score: 3, decision: "accept", factors: [], source: "argus" });
 });
 
+test("règle d'Argus contre son modèle : la raison « conforme » du modèle est remplacée par nos critères", async () => {
+  const modelSaysNormal = {
+    decision_reason: "Transaction conforme aux habitudes du compte. Autorisation immédiate.",
+    model_version: "ml_onnx_lightgbm_fastpath",
+    factors: [{ feature_name: "amount", feature_value: 150000, impact: 0.4, rank: 1, label: "Montant conforme" }],
+  };
+  const argus = await fakeArgus(() => ({ body: decision("VERIFY", { risk_score: 45, ...modelSaysNormal }) }));
+  const a = await client(argus.url).assess(send());
+  assert.equal(a.decision, "verify", "la décision d'Argus fait foi");
+  assert.equal(a.score, 45);
+  assert.equal(a.decisionReason, undefined, "la phrase contradictoire n'est pas gardée");
+  assert.equal(a.modelVersion, "ml_onnx_lightgbm_fastpath");
+  assert.deepEqual(a.factors.map((f) => f.id).sort(), ["amount_ratio", "new_beneficiary", "outbound"], "expliqué par nos critères locaux");
+
+  const blocked = await fakeArgus(() => ({ body: decision("BLOCK", { risk_score: 90, ...modelSaysNormal }) }));
+  const b = await client(blocked.url).assess(send({ amount: 250_000 }));
+  assert.equal(b.decision, "block");
+  assert.equal(b.decisionReason, undefined);
+});
+
+test("règle d'Argus : une vraie raison d'Argus, ou ses facteurs, sont gardés tels quels", async () => {
+  const genuine = await fakeArgus(() => ({ body: decision("VERIFY", { decision_reason: "Règle déterministe déclenchée : Transfert élevé." }) }));
+  const a = await client(genuine.url).assess(send());
+  assert.equal(a.decisionReason, "Règle déterministe déclenchée : Transfert élevé.");
+  assert.deepEqual(a.factors.map((f) => f.id), ["amount_zscore_30d", "new_beneficiary"], "ses facteurs ne sont pas remplacés");
+
+  const bare = await fakeArgus(() => ({ body: { decision: "VERIFY", risk_score: 45 } }));
+  const b = await client(bare.url).assess(send());
+  assert.equal(b.decisionReason, undefined);
+  assert.ok(b.factors.length > 0, "sans raison ni facteurs d'Argus, on explique avec nos critères");
+
+  const allowed = await fakeArgus(() => ({ body: decision("ALLOW", { risk_score: 3, decision_reason: "Transaction conforme aux habitudes du compte. Autorisation immédiate." }) }));
+  const c = await client(allowed.url).assess(send());
+  assert.equal(c.decisionReason, "Transaction conforme aux habitudes du compte. Autorisation immédiate.", "une acceptation garde sa raison");
+});
+
 test("repli fail-closed d'Argus (moteur ML en panne) : réponse 200 en QUARANTINE, traitée comme un refus", async () => {
   const argus = await fakeArgus(() => ({ body: decision("QUARANTINE", { ml_score: null, model_version: "fail-closed", risk_score: 60 }) }));
   const a = await client(argus.url).assess(send({ kind: "collect", amount: 5000 }));
