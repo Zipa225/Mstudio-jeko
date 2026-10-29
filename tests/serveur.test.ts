@@ -150,7 +150,7 @@ test("state : l'état complet pour l'écran analyste", async () => {
   assert.equal(s.status, 200);
   assert.equal(s.headers.get("cache-control"), "no-store");
   assert.deepEqual(Object.keys(s.body).sort(), [
-    "alerts", "ceiling", "counts", "criticalAlerts", "demoMode", "duress", "merchant", "now", "operations", "thresholds",
+    "alerts", "ceiling", "counts", "criticalAlerts", "demoMode", "duress", "leads", "merchant", "now", "operations", "thresholds",
   ]);
   assert.equal(s.body.now, NOON.getTime());
   assert.equal(s.body.ceiling, 200_000);

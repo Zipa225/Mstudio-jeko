@@ -8,6 +8,7 @@ import { createDialog, type Dialog } from "./dialog";
 import { createDuressGuard } from "./duress";
 import { createJekoLive } from "./jekoLive";
 import { JekoMock } from "./jekoMock";
+import { createProspectAgent, type ProspectAgent } from "./leads";
 import { createWebhookReceiver, type WebhookOutcome, type WebhookRequest } from "./jekoWebhook";
 import type { AsyncCashier, AsyncRisk, Cashier, SyncRisk, VoiceService } from "./ports";
 import { createArgusRisk, withFallback } from "./riskArgus";
@@ -58,6 +59,8 @@ export interface Runtime {
   /** Vrai si la clé de signature des webhooks vient de la configuration (sinon les vrais webhooks Jèko seront refusés). */
   webhookConfigured: boolean;
   dialog: Dialog;
+  /** L'entretien des visiteurs de la page /prospect (F12). */
+  prospects: ProspectAgent;
   receive: (req: WebhookRequest) => WebhookOutcome;
   getPhrase: () => string | undefined;
   demoMode: boolean;
@@ -135,7 +138,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
 
   const allowed = new Set<string>();
   return {
-    options, store, mock, cashierMode, dialog,
+    options, store, mock, cashierMode, dialog, prospects: createProspectAgent({ store }),
     webhookConfigured: Boolean(options.secret ?? getConfig().jekoWebhookSecret), receive, getPhrase,
     demoMode: options.demoMode ?? getConfig().demoMode,
     riskMode: risk.async === true ? "api" : "local",
