@@ -10,22 +10,27 @@ import { getConfig } from "./config";
 import { successTurn, type TurnGuard, type TurnResult } from "./dialog";
 import { formatPhone, isYes } from "./intent";
 import type { Operation, Store } from "./store";
-import { containsFuzzyPhrase, formatXof, MIN_PHRASE_KEYWORDS, phraseKeywords } from "./text";
+import { containsFuzzyPhrase, formatXof, isTriggerWord, MIN_PHRASE_KEYWORDS, phraseKeywords } from "./text";
 
 /**
  * - disabled : aucune phrase configurée (jamais de phrase par défaut)
  * - weak : moins de deux mots qui comptent, la phrase se déclencherait trop facilement
  * - active : la détection fonctionne
+ * - word : le secret est un seul mot (« mot déclencheur ») : il suffit de le dire dans n'importe quelle phrase. Ça marche,
+ *   mais le mot peut aussi être dit par hasard : l'écran de l'analyste le signale.
  */
-export type DuressStatus = "disabled" | "weak" | "active";
+export type DuressStatus = "disabled" | "weak" | "active" | "word";
 
 export function duressStatus(phrase: string | undefined): DuressStatus {
   if (!phrase) return "disabled";
+  if (isTriggerWord(phrase)) return "word";
   return phraseKeywords(phrase).length >= MIN_PHRASE_KEYWORDS ? "active" : "weak";
 }
 
-const heard = (text: string, phrase: string | undefined): phrase is string =>
-  duressStatus(phrase) === "active" && containsFuzzyPhrase(text, phrase as string);
+const heard = (text: string, phrase: string | undefined): phrase is string => {
+  const status = duressStatus(phrase);
+  return (status === "active" || status === "word") && containsFuzzyPhrase(text, phrase as string);
+};
 
 /**
  * Ce que l'écran du marchand peut afficher de sa propre phrase. S'il a dit la phrase de contrainte, on ne l'affiche

@@ -41,13 +41,27 @@ export const phraseKeywords = (phrase: string): string[] => tokens(phrase).filte
 /** Une phrase avec moins de deux mots qui comptent se déclencherait trop facilement : elle est refusée. */
 export const MIN_PHRASE_KEYWORDS = 2;
 
+/** Un secret d'UN seul mot est accepté comme « mot déclencheur » s'il a au moins cinq lettres (le même seuil que la tolérance aux erreurs de transcription). */
+export const MIN_TRIGGER_WORD_LETTERS = 5;
+
+/** Vrai si le secret est un mot déclencheur : un seul mot, d'au moins cinq lettres. */
+export function isTriggerWord(secret: string): boolean {
+  const t = tokens(secret);
+  return t.length === 1 && t[0].length >= MIN_TRIGGER_WORD_LETTERS;
+}
+
 /**
  * Vrai si les mots qui comptent de `phrase` se retrouvent dans `utterance`. La reconnaissance vocale n'est jamais
  * parfaite : un mot de 5 lettres ou plus peut différer d'une lettre. Il faut au moins `minRatio` des mots (80 % par défaut).
  */
 export function containsFuzzyPhrase(utterance: string, phrase: string, minRatio = 0.8): boolean {
-  const keys = phraseKeywords(phrase);
   const words = tokens(utterance);
+  // Mot déclencheur : il suffit que ce mot (à une lettre près) soit dans la phrase, quoi qu'elle dise d'autre.
+  if (isTriggerWord(phrase)) {
+    const word = tokens(phrase)[0];
+    return words.some((w) => w === word || levenshtein(w, word) <= 1);
+  }
+  const keys = phraseKeywords(phrase);
   if (keys.length < MIN_PHRASE_KEYWORDS || !words.length) return false;
   const hits = keys.filter((k) => words.some((w) => w === k || (k.length >= 5 && levenshtein(w, k) <= 1))).length;
   return hits / keys.length >= minRatio;
