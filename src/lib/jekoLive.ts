@@ -15,7 +15,7 @@
 // réseau, aucun argent ne bouge. L'écran, l'analyste et Argus voient la même chose qu'avec un vrai transfert.
 // Aucune clé n'apparaît dans un message d'erreur ni dans un journal.
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { Wallet } from "./intent";
 import type { AsyncCashier } from "./ports";
 
@@ -55,6 +55,10 @@ export interface JekoLive extends AsyncCashier {
 }
 
 const hex = (bytes: number) => randomBytes(bytes).toString("hex");
+/** Adresse de retour acceptée par Jèko quand l'application n'a pas encore d'adresse publique. */
+const RETURN_FALLBACK = new URL("https://example.org");
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Même forme que les identifiants de la fausse caisse : `pr_` + 8 caractères. */
 const defaultReference = () => `pr_${hex(4)}`;
 
@@ -79,7 +83,10 @@ export function createJekoLive(options: JekoLiveOptions): JekoLive {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 8000;
   const newReference = options.newReference ?? defaultReference;
-  const returnUrl = (result: "ok" | "erreur") => new URL(`/?paiement=${result}`, publicBase).toString();
+  // Jèko refuse les adresses de retour en localhost ou sans nom de domaine (constaté : « must be a valid URL »).
+  // En local, le client revient donc sur une adresse neutre ; avec PUBLIC_BASE_URL public, il revient sur l'application.
+  const returnBase = /^(localhost|127\.|\[|.*\.localhost$)/.test(publicBase.hostname) || !publicBase.hostname.includes(".") ? RETURN_FALLBACK : publicBase;
+  const returnUrl = (result: "ok" | "erreur") => new URL(`/?paiement=${result}`, returnBase).toString();
   /** Dernier vrai lien reçu : sert de modèle au lien factice de la réponse sous contrainte. */
   let lastRealUrl: URL | undefined;
 
@@ -162,7 +169,7 @@ export function createJekoLive(options: JekoLiveOptions): JekoLive {
       const model = lastRealUrl ?? new URL("https://pay.jeko.africa/");
       const segments = model.pathname.split("/").filter(Boolean);
       const last = segments.at(-1) ?? "";
-      const token = (id.replace(/[^A-Za-z0-9]/g, "") + hex(16)).slice(0, Math.max(8, last.length));
+      const token = UUID.test(last) ? randomUUID() : (id.replace(/[^A-Za-z0-9]/g, "") + hex(16)).slice(0, Math.max(8, last.length));
       const decoy = new URL(model.origin);
       decoy.pathname = `/${[...segments.slice(0, -1), token].join("/")}`;
       return decoy.toString();
