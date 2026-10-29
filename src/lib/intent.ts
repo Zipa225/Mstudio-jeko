@@ -136,6 +136,19 @@ export function isNo(text: string): boolean {
 // ---------------------------------------------------------------------------
 
 const COLLECT_VERBS = new Set(["encaisse", "encaisser", "encaissez", "encaissement"]);
+/**
+ * Encaissements bâtis sur « payer » ou « devoir » : c'est le client qui paie le marchand. Une vendeuse dit « fais
+ * payer » bien plus souvent que « encaisse ».
+ * Des expressions entières, jamais le seul mot « payer », parce que « je dois payer » et « paye Koffi » sont des
+ * envois : seul l'entourage dit qui paie qui. Pour la même raison, « fait payer » (passé) et « vais payer »
+ * (le marchand) n'y sont pas.
+ */
+const COLLECT_PHRASES = [
+  "fais payer", "fais moi payer", "fais lui payer", "faire payer", "faites payer",
+  "demande de paiement", "demande le paiement", "demande un paiement", "demander le paiement",
+  "doit payer", "doivent payer", "va payer", "vont payer",
+  "me doit", "me doivent", "nous doit", "nous doivent",
+];
 const SEND_VERBS = new Set([
   "envoie", "envoyer", "envoyez", "envoi", "transfere", "transferer", "transferez", "transfert", "vire", "virer", "verse", "verser",
 ]);
@@ -163,11 +176,13 @@ export function parseIntent(text: string): Intent {
 
   const amount = parseAmount(text);
   const verb = toks.find((t) => COLLECT_VERBS.has(t) || SEND_VERBS.has(t));
+  // Cherché seulement faute de verbe : quand les deux sont là, le verbe est le signal le plus clair et il décide.
+  const collectPhrase = verb === undefined && hasAny(padded(text), COLLECT_PHRASES);
   const question = isQuestion(norm);
 
   // « comment envoyer de l'argent ? » est une question, pas un ordre : un ordre porte un montant.
-  if (verb && !(question && amount === undefined)) {
-    const intent: Intent = { kind: COLLECT_VERBS.has(verb) ? "collect" : "send" };
+  if ((verb !== undefined || collectPhrase) && !(question && amount === undefined)) {
+    const intent: Intent = { kind: verb === undefined || COLLECT_VERBS.has(verb) ? "collect" : "send" };
     if (amount !== undefined) intent.amount = amount;
     const wallet = extractWallet(text);
     if (wallet) intent.wallet = wallet;

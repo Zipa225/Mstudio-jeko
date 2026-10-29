@@ -30,6 +30,32 @@ test("encaisser : ce qui manque reste absent, l'agent le demandera", () => {
   ]);
 });
 
+test("encaisser : « fais payer », qu'une vendeuse dit plus souvent que « encaisse »", () => {
+  check([
+    ["Fais payer cinq mille francs", { kind: "collect", amount: 5000 }],
+    ["faire payer cinq mille", { kind: "collect", amount: 5000 }],
+    ["fais-moi payer cinq mille francs", { kind: "collect", amount: 5000 }],
+    ["demande de paiement de cinq mille", { kind: "collect", amount: 5000 }],
+    ["le client doit payer cinq mille", { kind: "collect", amount: 5000 }],
+    ["il me doit cinq mille francs", { kind: "collect", amount: 5000 }],
+    ["le client va payer deux mille", { kind: "collect", amount: 2000 }],
+    ["fais payer dix mille francs par Wave", { kind: "collect", amount: 10000, wallet: "wave" }],
+    // Sans montant, c'est quand même un encaissement : l'agent demandera combien.
+    ["fais payer", { kind: "collect" }],
+  ]);
+});
+
+test("encaisser : « payer » tout seul ne décide de rien, c'est l'entourage qui dit qui paie qui", () => {
+  check([
+    // Là, c'est le marchand qui paie : surtout pas un encaissement.
+    ["je dois payer mille francs à Koffi", { kind: "unknown" }],
+    // Un verbe explicite l'emporte sur l'expression : « il me doit » ne retourne pas l'envoi.
+    ["Envoie mille francs à Koffi, il me doit", { kind: "send", amount: 1000, beneficiary: "Koffi" }],
+    // Une question sans montant reste une question.
+    ["comment faire payer un client ?", { kind: "support" }],
+  ]);
+});
+
 // --- Envoyer ---------------------------------------------------------------
 
 test("envoyer : montant, bénéficiaire avec ses accents, moyen de paiement", () => {
