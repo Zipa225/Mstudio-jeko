@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { savedSttEngine, startRecording, type Recording } from "./marchand/audio";
+import { saveMicProfile, savedMicProfile, savedSttEngine, startRecording, type Recording } from "./marchand/audio";
 import { browserSpeechSupported, getRecognition, type Recognition } from "./marchand/browserSpeech";
 import styles from "./marchand/marchand.module.css";
 import {
   canSimulateClientPayment, demoPhrases, describeRecording, errorView, GREETING, heardLine, isDebugMode, isDemoPanel, isTestMode, jekoModeFrom, keepNumbersTogether, micErrorMessage,
-  newSessionId, PAYMENT_POLL_MAX_MS, PAYMENT_POLL_MS, payLink, PHASE_LABEL, pickDemoName, screenKind, showConfirmButtons, sourceLine, voiceModeFrom,
+  newSessionId, PAYMENT_POLL_MAX_MS, PAYMENT_POLL_MS, payLink, PHASE_LABEL, pickDemoName, saturationAdvice, screenKind, showConfirmButtons, sourceLine, voiceModeFrom,
   type Phase, type TurnView, type VoiceMode,
 } from "./marchand/view";
 
@@ -263,7 +263,8 @@ export default function MarchandPage() {
   async function listenWithAethex() {
     setNotice(undefined);
     try {
-      const recording = await startRecording();
+      const profile = savedMicProfile();
+      const recording = await startRecording(profile);
       recordingRef.current = recording;
       setPhase("listening");
       const heard = await recording.result;
@@ -278,6 +279,13 @@ export default function MarchandPage() {
           if (old) URL.revokeObjectURL(old.url);
           return { url: URL.createObjectURL(new Blob([heard.wav], { type: "audio/wav" })), summary: describeRecording(heard.stats) };
         });
+      }
+      const advice = saturationAdvice(profile, heard.stats);
+      if (advice) {
+        if (advice.nextProfile) saveMicProfile(advice.nextProfile);
+        setPhase("idle");
+        setNotice(advice.message);
+        return;
       }
       await sendAudio(heard.wav);
     } catch (e) {
