@@ -124,6 +124,17 @@ test("demande de paiement : sans moyen précisé, Wave ; chaque demande a sa ré
   assert.equal(requests[0].json.reference, a.id);
 });
 
+test("demande de paiement : Jèko refuse localhost, le retour du client prend une adresse valide", async () => {
+  const { url, requests } = await fake(accepting);
+  for (const local of ["http://localhost:3000", "http://127.0.0.1:3000", "http://app.localhost", "http://monordinateur:3000"]) {
+    await client(url, { publicBaseUrl: local }).createPaymentRequest({ amount: 100 });
+  }
+  await client(url, { publicBaseUrl: "https://demo.example.org" }).createPaymentRequest({ amount: 100 });
+  const returns = requests.map((r) => r.json.paymentDetails.data.successUrl);
+  assert.deepEqual(returns.slice(0, 4), Array(4).fill("https://example.org/?paiement=ok"));
+  assert.equal(returns[4], "https://demo.example.org/?paiement=ok", "adresse publique : le client revient sur l'application");
+});
+
 test("demande de paiement : l'adresse de Jèko peut avoir un chemin et une barre finale", async () => {
   const { url, requests } = await fake(accepting);
   await client(`${url}/v1/`).createPaymentRequest({ amount: 100 });
@@ -208,6 +219,18 @@ test("lien factice : même forme qu'un vrai lien, mais différent", async () => 
   assert.ok(decoy.pathname.split("/").at(-1)!.length >= real.pathname.split("/").at(-1)!.length);
   assert.notEqual(decoy.toString(), real.toString());
   assert.notEqual(decoy.toString(), new URL(jeko.decoyPayUrl!("pr_12345678")).toString(), "jamais deux fois le même");
+});
+
+test("lien factice : si le vrai lien finit par un UUID, le faux aussi", async () => {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const { url } = await fake((_req, res) => sendJson(res, 200, { redirectUrl: "https://pay.jeko.africa/pr/05ba3e18-1224-4036-80a1-37b419a7ebfa" }));
+  const jeko = client(url);
+  const real = new URL((await jeko.createPaymentRequest({ amount: 100 })).payUrl as string);
+  const decoy = new URL(jeko.decoyPayUrl("pr_12345678"));
+  assert.equal(decoy.origin, real.origin);
+  assert.match(decoy.pathname, /^\/pr\/[0-9a-f-]{36}$/);
+  assert.match(decoy.pathname.split("/").at(-1)!, uuid);
+  assert.notEqual(decoy.pathname, real.pathname);
 });
 
 test("boutiques : GET /partner_api/stores avec les deux clés", async () => {
