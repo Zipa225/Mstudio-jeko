@@ -83,6 +83,10 @@ une simulée, choisies par la configuration au démarrage.
 - **État en mémoire** (`src/lib/store.ts`), un seul exemplaire par processus ; remise à zéro par le bouton de l'écran analyste.
 - **Dialogue** (`src/lib/dialog.ts`) : machine à états (montant, bénéficiaire, relecture, confirmation). Il est synchrone avec le
   calcul local, asynchrone avec Argus et la vraie caisse ; les tours d'une même session passent toujours dans l'ordre.
+- **Compréhension tolérante** (`src/lib/intent.ts`) : la reconnaissance vocale écrit mal certains mots (« envoie » devient « on voit »,
+  « Wave » devient « 8 » ou « vague »). Quand la phrase parle d'argent (un montant et « francs »), ces erreurs connues sont réparées avant
+  l'analyse. Quand un montant est compris sans verbe, l'assistant **ne devine pas** : il demande « Tu veux encaisser ou envoyer 5 000 francs ? »
+  et garde le montant. Hors phrase d'argent rien n'est réparé (« on voit que c'est bien » reste inconnu).
 - **Contrainte** (`src/lib/duress.ts`) : la réponse sous contrainte et la réponse normale viennent de **la même fonction**
   (`successTurn`) : elles sont identiques par construction.
 - **Repli** : si Argus est injoignable, le calcul local prend le relais et une alerte « mode dégradé » est envoyée à l'analyste.
@@ -205,6 +209,8 @@ adresse à enregistrer dans le tableau de bord ; le secret de signature fourni v
 
 ## Script de démonstration
 
+Le texte à dire pour la présentation, les réponses aux questions du jury et la liste du matin sont dans [PITCH.md](PITCH.md).
+
 Durée : environ 3 minutes. Matériel : l'ordinateur sur le grand écran (`/analyste`), un téléphone pour la commerçante (`/`) avec
 un **micro-casque**.
 
@@ -261,7 +267,7 @@ vérifié par la voix »). Utilisez alors un autre prénom neuf pour rejouer ens
 ## Tests et qualité
 
 ```bash
-npm test             # 392 tests, sans réseau externe (faux serveurs HTTP locaux pour AethexAI, Argus et Jèko)
+npm test             # 411 tests, sans réseau externe (faux serveurs HTTP locaux pour AethexAI, Argus et Jèko)
 npm run typecheck    # TypeScript strict
 npm run build
 ```

@@ -9,7 +9,7 @@
 import { getConfig } from "./config";
 import { parseAmount, toFrenchWords } from "./frenchNumbers";
 import {
-  extractBeneficiary, extractPhone, extractWallet, formatPhone, isNo, isYes, parseIntent, WALLET_LABEL, type Intent, type Wallet,
+  extractBeneficiary, extractPhone, extractWallet, formatPhone, isNo, isYes, kindFrom, parseIntent, WALLET_LABEL, type Intent, type Wallet,
 } from "./intent";
 import type { AsyncCashier, AsyncRisk, Cashier, RiskAssessment, RiskRequest, SyncRisk } from "./ports";
 import { findAnswer, summarize } from "./kb";
@@ -385,6 +385,21 @@ export function createDialog(deps: DialogDeps): AnyDialog {
 
   function handleMissing(s: Session, p: Pending, text: string): Maybe<TurnResult> {
     const intent = parseIntent(text);
+
+    // Un montant a été compris mais pas le verbe : « encaisser » ou « envoyer » complète la commande, le montant est gardé.
+    if (p.stage === "need_kind") {
+      if ((intent.kind === "collect" || intent.kind === "send") && intent.amount !== undefined) return startCommand(s, intent);
+      if (isNo(text)) {
+        clear(s);
+        return plain("D'accord, j'annule.");
+      }
+      const kind = kindFrom(text);
+      if (!kind) return plain("Dis encaisser ou envoyer.");
+      p.kind = kind;
+      p.wallet = p.wallet ?? extractWallet(text);
+      return advance(s, p);
+    }
+
     if (intent.kind === "collect" || intent.kind === "send") return startCommand(s, intent);
 
     if (isNo(text)) {
@@ -443,6 +458,12 @@ export function createDialog(deps: DialogDeps): AnyDialog {
       }
       case "support":
         return supportTurn(text);
+      case "amount": {
+        // Le verbe n'a pas été compris (« on voit cinq mille francs ») : on garde le montant et on demande, sans rien deviner.
+        const p: Pending = { stage: "need_kind", kind: "collect", amount: intent.amount, wallet: intent.wallet };
+        s.pending = p;
+        return turn(line`Tu veux encaisser ou envoyer ${amt(intent.amount as number)} francs${via(intent.wallet)} ?`);
+      }
       default:
         if (isYes(text) || isNo(text)) return plain(NOTHING_TO_CONFIRM);
         return plain("Je n'ai pas bien compris. Tu peux dire par exemple : encaisse cinq mille francs, ou : combien j'ai encaissé aujourd'hui ?");
