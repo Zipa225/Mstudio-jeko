@@ -3,7 +3,7 @@
 import type { Decision, Factor } from "../../lib/risk";
 import type { Alert, Lead, LeadInterest, Operation, OperationStatus } from "../../lib/store";
 
-export type DuressState = "disabled" | "weak" | "active";
+export type DuressState = "disabled" | "weak" | "active" | "word";
 
 /** Ce que renvoie GET /api/state. */
 export interface AnalystState {
@@ -109,6 +109,7 @@ export function counters(state: Pick<AnalystState, "counts" | "criticalAlerts">)
 export function duressNotice(status: DuressState): string | undefined {
   if (status === "disabled") return "Phrase de contrainte non configurée : la détection est désactivée.";
   if (status === "weak") return "Phrase de contrainte trop courte : la détection est désactivée.";
+  if (status === "word") return "Mot déclencheur unique : le dire dans n'importe quelle phrase déclenche la contrainte, même par hasard.";
   return undefined;
 }
 
