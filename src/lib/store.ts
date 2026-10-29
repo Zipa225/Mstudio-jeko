@@ -39,7 +39,7 @@ export interface Alert {
   id: string;
   ts: number;
   level: "info" | "warning" | "critical";
-  type: "verified" | "blocked" | "duress" | "failed" | "webhook" | "degraded";
+  type: "verified" | "blocked" | "duress" | "failed" | "webhook" | "degraded" | "handoff";
   title: string;
   detail: string;
   operationId?: string;

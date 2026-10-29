@@ -5,7 +5,7 @@ import { startRecording, type Recording } from "./marchand/audio";
 import styles from "./marchand/marchand.module.css";
 import {
   canSimulateClientPayment, errorView, GREETING, heardLine, isTestMode, jekoModeFrom, keepNumbersTogether, micErrorMessage,
-  newSessionId, PAYMENT_POLL_MAX_MS, PAYMENT_POLL_MS, payLink, PHASE_LABEL, screenKind, showConfirmButtons, voiceModeFrom,
+  newSessionId, PAYMENT_POLL_MAX_MS, PAYMENT_POLL_MS, payLink, PHASE_LABEL, screenKind, showConfirmButtons, sourceLine, voiceModeFrom,
   type Phase, type TurnView, type VoiceMode,
 } from "./marchand/view";
 
@@ -402,6 +402,7 @@ export default function MarchandPage() {
           </div>
         )}
         <p className={styles.reply}>{keepNumbersTogether(result.reply)}</p>
+        {sourceLine(result.source) && <p className={styles.heard}>{sourceLine(result.source)}</p>}
         {heard && <p className={styles.heard}>{heard}</p>}
       </section>
 

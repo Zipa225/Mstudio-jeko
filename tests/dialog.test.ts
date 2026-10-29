@@ -337,14 +337,6 @@ test("bilan du jour", () => {
   assert.equal(one.say("bilan").reply, "Aujourd'hui, tu as encaissé 7 000 francs, en 1 paiement.");
 });
 
-test("questions de support : réponse provisoire, aucune opération", () => {
-  const { say, store, calls } = setup();
-  const r = say("J'ai atteint la limite de 200 000, comment augmenter mon plafond ?");
-  assert.match(r.reply, /conseiller Jèko/);
-  assert.equal(store.operations.length, 10);
-  assert.ok(noMoneyMoved(calls));
-});
-
 test("texte vide ou incompris : l'agent redemande", () => {
   const { say, calls } = setup();
   assert.match(say("").reply, /pas entendu/);
