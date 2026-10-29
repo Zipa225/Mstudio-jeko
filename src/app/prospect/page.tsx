@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { startRecording, type Recording } from "../marchand/audio";
+import { savedSttEngine, startRecording, type Recording } from "../marchand/audio";
+import { recognizeOnce } from "../marchand/browserSpeech";
 import { describeRecording, isDebugMode, micErrorMessage, sourceLine, voiceModeFrom, type VoiceMode } from "../marchand/view";
 import styles from "./prospect.module.css";
 
@@ -166,6 +167,20 @@ export default function ProspectPage() {
     }
     unlockAudio();
     setNotice(undefined);
+
+    // La page /micro peut avoir montré que la reconnaissance du navigateur comprend mieux cette voix.
+    if (savedSttEngine() === "navigateur") {
+      const listeningNow = recognizeOnce();
+      if (listeningNow) {
+        setListening(true);
+        const { text, error } = await listeningNow.result;
+        setListening(false);
+        if (text.trim()) await sendText(text.trim());
+        else setNotice(error === "not-allowed" ? "Autorise le micro dans ton navigateur." : "Je n'ai pas entendu. Réessaie.");
+        return;
+      }
+    }
+
     try {
       const recording = await startRecording();
       recordingRef.current = recording;
