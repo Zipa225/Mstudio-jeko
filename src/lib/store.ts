@@ -3,6 +3,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { Wallet } from "./intent";
+import { DEMO_KYC, type Kyc } from "./kyc";
 import type { Decision, Factor } from "./risk";
 import { normalize } from "./text";
 
@@ -33,13 +34,15 @@ export interface Operation {
   modelVersion?: string;
   /** Vrai si Argus était injoignable et que le score local a servi de secours. */
   degraded?: boolean;
+  /** Vérifications d'identité fausses, pour débloquer une opération bloquée (limitées, voir `KYC_MAX_ATTEMPTS`). */
+  kycAttempts?: number;
 }
 
 export interface Alert {
   id: string;
   ts: number;
   level: "info" | "warning" | "critical";
-  type: "verified" | "blocked" | "duress" | "failed" | "webhook" | "degraded" | "handoff" | "lead";
+  type: "verified" | "blocked" | "unblocked" | "duress" | "failed" | "webhook" | "degraded" | "handoff" | "lead";
   title: string;
   detail: string;
   operationId?: string;
@@ -56,6 +59,8 @@ export interface Merchant {
   name: string;
   shop: string;
   contacts: Contact[];
+  /** Les deux informations qui débloquent une opération retenue par Argus (KYC statique, voir kyc.ts). */
+  kyc: Kyc;
 }
 
 /** Commande en cours d'élaboration (le « brouillon ») : elle vit dans la session, pas dans les opérations. */
@@ -137,6 +142,7 @@ export class Store {
             { name: "Adjoua", phone: "0100000003" },
           ]
         : [],
+      kyc: { ...DEMO_KYC },
     };
     if (!seed) return;
     const now = this.clock().getTime();

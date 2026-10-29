@@ -76,10 +76,11 @@ Et maintenant, regardez l'écran de Karim, l'analyste de Jèko. »
 
 ### 2:10 - 2:30 Scènes 4 et 5 : refuser, répondre
 
-« Si l'agresseur insiste avec 250 000 francs, Argus refuse, et un conseiller rappelle Awa. »
+« Si l'agresseur insiste avec 250 000 francs, Argus bloque l'opération. L'écran d'Awa ne la rejette pas : elle la retrouve dans son historique, marquée « Bloquée ». Pour la débloquer, Awa doit prouver qui elle est. »
 
 *Awa : « Envoie deux cent cinquante mille francs à (prénom neuf). »*
-*L'assistant : « Je ne peux pas faire ça maintenant, pour ta sécurité. Un conseiller Jèko va te rappeler. »*
+*L'assistant : « Cette opération de 250 000 francs est en attente de vérification. Tu peux la débloquer dans ton historique. »*
+*(Facultatif, si le temps le permet : « Débloquer », date de naissance et 4 chiffres de la pièce, puis « oui » à la relecture.)*
 
 « Et si Awa a une question, l'assistant répond en citant sa source, ou passe la main à un conseiller. »
 
@@ -108,7 +109,7 @@ La suite : brancher cet assistant sur le bouton micro de Jèko Business, et vali
 | --- | --- | --- |
 | La voix ne comprend pas une phrase | L'opérateur appuie sur le bouton de la scène dans le panneau `/?demo=1` | « En salle bruyante, nous gardons ces boutons : ils remplacent la voix d'Awa, pas le reste. Argus, l'analyste et les alertes sont les mêmes. » |
 | Le micro ne capte rien | Panneau `/?demo=1` pour toute la suite | Même phrase, sans s'excuser longuement. |
-| Argus refuse une opération normale | Rejouer une fois, sinon bouton suivant | « Argus est prudent : il refuse dans le doute. » |
+| Argus bloque une opération normale | Rejouer une fois, sinon bouton suivant | « Argus est prudent : il bloque dans le doute, et on peut débloquer en vérifiant l'identité. » |
 | Plus rien ne s'affiche | Lancer la vidéo de secours | « Voici la même démonstration enregistrée. » |
 
 Ne pas improviser une explication technique devant le jury quand ça rate : une phrase, le plan B, on continue.
@@ -145,6 +146,14 @@ sont simulés : nous ne les avons pas branchés.
 Oui : Argus tourne chez nous dans Docker, avec son moteur et son API, et chaque opération lui est soumise. Précision honnête : nous avons
 posé deux règles pour la démo, vérifier à partir de 100 000 francs vers un nouveau numéro, refuser au-dessus de 200 000.
 
+**« Le déblocage, c'est un vrai KYC ? »**
+Non, c'est un KYC statique : deux informations fixes (date de naissance, quatre derniers chiffres de la pièce) pour montrer le parcours. Un vrai
+déblocage passerait par le dossier de vérification de Jèko. Même après un déblocage réussi, Awa doit encore entendre la relecture et dire « oui ».
+
+**« Et si quelqu'un devine ces informations ? »**
+Trois essais seulement : au troisième échec l'opération reste bloquée et l'analyste est alerté. Deux informations fixes restent faibles : c'est une limite
+du prototype, que le vrai KYC de Jèko lèverait.
+
 **« Pourquoi 200 000 francs ? »**
 C'est le plafond que nous avons retenu pour la démonstration. Nous ne savons pas encore s'il est par opération ou cumulé : c'est une de nos
 deux questions à Jèko.
@@ -162,7 +171,7 @@ Si Argus est injoignable, un calcul local de secours prend le relais et l'analys
 répond pas, l'assistant parle avec la voix du navigateur, et on peut taper au clavier.
 
 **« Est-ce fiable ? »**
-Le projet a 414 tests automatiques, et pour chaque règle importante nous avons cassé le code volontairement pour vérifier qu'un test échoue.
+Le projet a 431 tests automatiques, et pour chaque règle importante nous avons cassé le code volontairement pour vérifier qu'un test échoue.
 Aucun test n'appelle une vraie API. Cela dit, la voix réelle dépend du micro et du bruit, et ça, un test ne le garantit pas.
 
 **« Quel modèle économique ? »**
@@ -176,6 +185,7 @@ Nous ne l'avons pas défini : c'est à Jèko de décider. La valeur vient de la 
 - « Ça comprend le dioula » : faux.
 - « Argus détecte tout seul les gros montants » : faux, ce sont deux règles posées pour la démo.
 - « Le mot secret est inviolable » : faux. Dire ce qu'il protège et ce qu'il ne protège pas.
+- « Le KYC est réel » : faux, il est statique (deux informations fixes).
 - Aucun chiffre de performance ni statistique non mesurée. Le seul chiffre repris est « plus d'un million de transactions par mois »,
   **attribué à Jèko** (« Jèko nous a dit »).
 

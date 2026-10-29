@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { saveMicProfile, savedMicProfile, savedSttEngine, startRecording, type Recording } from "./marchand/audio";
 import { browserSpeechSupported, getRecognition, type Recognition } from "./marchand/browserSpeech";
+import History from "./marchand/History";
 import styles from "./marchand/marchand.module.css";
 import {
   canSimulateClientPayment, demoPhrases, describeRecording, errorView, GREETING, heardLine, isDebugMode, isDemoPanel, isTestMode, jekoModeFrom, keepNumbersTogether, micErrorMessage,
@@ -491,6 +492,8 @@ export default function MarchandPage() {
           <button type="submit" className={styles.send} disabled={busy || !input.trim()}>Envoyer</button>
         </form>
       )}
+
+      <History sessionId={sessionId} refreshKey={result} busy={busy} onUnblocked={show} unlockAudio={unlockAudio} />
 
       {demoPanel && demoMode && (
         <section className={styles.demoPanel} aria-label="Phrases de démonstration">

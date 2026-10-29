@@ -121,15 +121,17 @@ test("démo : transfert de 150 000 FCFA à un inconnu, raison dite à voix haute
   assert.deepEqual([alert.level, alert.type, alert.operationId], ["info", "verified", last().id]);
 });
 
-test("démo : transfert de 250 000 FCFA, bloqué avec une alerte de rappel", () => {
+test("démo : transfert de 250 000 FCFA, bloqué avec une alerte à l'analyste", () => {
   const { say, calls, store, last } = setup();
   const a = say("Envoie deux cent cinquante mille francs à Koné");
-  assert.match(a.reply, /Je ne peux pas faire ça maintenant/);
+  assert.equal(a.reply, "Cette opération de 250 000 francs est en attente de vérification. Tu peux la débloquer dans ton historique.");
+  assert.doesNotMatch(a.reply, /conseiller|rappeler/i, "plus de « un conseiller va te rappeler » : l'opération se débloque dans l'historique");
+  assert.equal(a.tone, "verify");
   assert.equal(a.awaitingConfirm, false);
   assert.deepEqual([last().status, last().decision, last().score], ["blocked", "block", 85]);
   const alert = store.alerts.at(-1)!;
   assert.deepEqual([alert.level, alert.type], ["warning", "blocked"]);
-  assert.match(alert.title, /rappel à faire/);
+  assert.match(alert.title, /vérification d'identité requise/);
   assert.match(alert.detail, /250 000 FCFA vers Koné/);
   assert.equal(alert.operationId, last().id);
   assert.ok(noMoneyMoved(calls));

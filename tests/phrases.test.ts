@@ -174,7 +174,7 @@ test("parcours des boutons : encaissement, vérification, contrainte, refus, sup
   assert.equal(forced.body.heard, "Oui");
 
   const refused = await press("refus");
-  assert.match(refused.body.reply, /Je ne peux pas faire ça maintenant/);
+  assert.match(refused.body.reply, /en attente de vérification/);
 
   const support = await press("support");
   assert.equal(support.body.source, "Notes des ingénieurs Jèko (plafond à confirmer)");
