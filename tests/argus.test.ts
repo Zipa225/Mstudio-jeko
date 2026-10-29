@@ -379,7 +379,7 @@ test("dialogue : la décision d'Argus l'emporte sur le calcul local", async () =
   const block = await fakeArgus(() => ({ body: decision("BLOCK") }));
   const a = dialogWith(block.url);
   const refused = await a.say("Envoie 5000 à Fatou");
-  assert.equal(refused.tone, "refusal");
+  assert.equal(refused.tone, "verify");
   assert.equal(a.last().status, "blocked");
   assert.equal(a.store.alerts.at(-1)!.type, "blocked");
   assert.match((await a.say("oui")).reply, /rien à confirmer/);

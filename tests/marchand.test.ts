@@ -46,7 +46,7 @@ test("réponses du dialogue : succès, refus et information", () => {
   b.say("Envoie 5000 à Fatou");
   assert.equal(b.say("oui").tone, "success", "transfert envoyé");
 
-  assert.equal(setup().say("Envoie deux cent cinquante mille francs à Koné").tone, "refusal", "opération bloquée");
+  assert.equal(setup().say("Envoie deux cent cinquante mille francs à Koné").tone, "verify", "opération bloquée : en attente, pas un refus");
   assert.equal(setup().say("Encaisse 250 000 francs").tone, "refusal", "au-dessus du plafond");
 
   const c = setup();

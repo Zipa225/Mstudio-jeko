@@ -54,6 +54,7 @@ page `/` en simule l'écran.
 | Transferts Jèko | **Simulés** | Jamais envoyés à Jèko : aucun argent ne sort. Le format de contact de l'API de transfert n'est pas documenté. |
 | Confirmation de paiement | **Réel (vérifié)** | « Paiement reçu » n'est dit qu'après un webhook dont la signature HMAC-SHA256, le montant et la référence sont vérifiés. Testé contre un faux Jèko ; pas encore contre un vrai webhook. |
 | Marchand, historique, contacts | **Simulés** | Awa, ses dix encaissements d'exemple et trois contacts (Fatou, Mamadou, Adjoua). |
+| Vérification d'identité (KYC) | **Simulée** | Deux informations fixes (date de naissance, 4 derniers chiffres de la pièce) pour débloquer une opération bloquée. Pas de dossier réel. |
 | Mot secret | **Réel** | Détection floue (tolère une lettre d'écart de transcription). Aucune valeur par défaut. |
 
 ## Les écrans
@@ -99,7 +100,18 @@ une simulée, choisies par la configuration au démarrage.
 | --- | --- |
 | ALLOW | Relecture, puis exécution après « oui » |
 | VERIFY | Question de vérification avec la raison du doute, puis exécution après « oui » |
-| QUARANTINE, BLOCK | Refus poli, alerte « rappel à faire » chez l'analyste |
+| QUARANTINE, BLOCK | Pas de refus : « Cette opération est en attente de vérification. Tu peux la débloquer dans ton historique. » L'opération apparaît « Bloquée » dans l'historique, avec une alerte chez l'analyste. La commerçante la débloque en vérifiant son identité (voir ci-dessous) |
+
+#### Débloquer une opération bloquée (KYC statique)
+
+L'historique de la page `/` liste les opérations avec un statut en mots simples (Payé, Envoyé, En attente du client, À confirmer,
+Annulée, Bloquée). Une opération **Bloquée** a un bouton « Débloquer » : la commerçante donne sa **date de naissance** et les **4
+derniers chiffres de sa pièce d'identité**. Si c'est juste, l'opération repasse à « À confirmer » : l'assistant la relit et attend un
+« oui » (rien ne part sans lui). Après **3 réponses fausses**, elle reste bloquée et l'analyste est alerté.
+
+Faute de temps, ce KYC est **statique** : les deux informations sont celles du personnage d'Awa (`src/lib/kyc.ts`, `DEMO_KYC` :
+14/03/1988 et 4821), rappelées sous le formulaire en mode démonstration. Un vrai KYC passerait par le dossier de vérification de Jèko.
+Une opération retenue par la phrase de contrainte s'affiche dans l'historique comme un succès, jamais comme « retenue ».
 
 Le délai laissé au moteur ML d'Argus est porté à **1500 ms** dans `docker/argus/docker-compose.yml` (150 ms par défaut chez Argus) : après un
 moment d'inactivité, Argus assemble ses données « sur cache froid » en environ une seconde, et au-delà de 150 ms il passait en repli
@@ -231,8 +243,12 @@ un **micro-casque**.
 | 1 | « Encaisse cinq mille francs par Wave. » puis « Oui. » | « Tu veux encaisser 5 000 francs par Wave. Tu confirmes ? » puis « C'est lancé. Le client peut scanner et payer. » Le QR de la boutique s'affiche pour que le client le scanne, puis le client « paie » (bouton « Simuler : le client a payé » avec la fausse caisse ; un vrai paiement en mode réel) ; la voix annonce « Paiement reçu. 5 000 francs par Wave. » | Un encaissement accepté (score 0) |
 | 2 | « Envoie cent cinquante mille francs à *Prénom neuf*. » | « 150 000 francs pour *Prénom neuf*. C'est beaucoup plus que d'habitude, et c'est un nouveau contact. Je l'envoie ? » | Un transfert « à vérifier » (score 45) |
 | 3 | « Oui, c'est bon, » **+ la phrase contenant le mot secret** | « C'est envoyé. 150 000 francs à *Prénom neuf*. » (identique à un succès) | **Bannière rouge « Contrainte signalée »**, score et raisons ; compteur « Retenues » à 1 ; aucune somme transférée |
-| 4 | « Envoie deux cent cinquante mille francs à *Prénom neuf*. » | « Je ne peux pas faire ça maintenant, pour ta sécurité. Un conseiller Jèko va te rappeler. » | Alerte « Opération bloquée : rappel à faire » (score 90) |
+| 4 | « Envoie deux cent cinquante mille francs à *Prénom neuf*. » | « Cette opération de 250 000 francs est en attente de vérification. Tu peux la débloquer dans ton historique. » | Alerte « Opération bloquée : vérification d'identité requise » (score 90) ; dans l'historique de la commerçante : « Bloquée » et le bouton « Débloquer » |
 | 5 | « J'ai atteint la limite de 200 000, comment augmenter mon plafond ? » | La réponse du support, **avec sa source**, et le passage à un conseiller | Alerte « Question passée à un conseiller » |
+
+Suite facultative de la scène 4 : « Débloquer » dans l'historique, donner la date de naissance et les 4 chiffres (rappelés sous le
+formulaire en démonstration), puis dire « oui » à la relecture : « C'est envoyé » et une alerte « Opération débloquée après vérification
+d'identité ».
 
 Variante facultative : dire un « oui » normal à la scène 3 montre le parcours sans contrainte (« C'est envoyé », alerte « Transfert
 vérifié par la voix »). Utilisez alors un autre prénom neuf pour rejouer ensuite la contrainte.
@@ -267,7 +283,7 @@ vérifié par la voix »). Utilisez alors un autre prénom neuf pour rejouer ens
 ## Tests et qualité
 
 ```bash
-npm test             # 414 tests, sans réseau externe (faux serveurs HTTP locaux pour AethexAI, Argus et Jèko)
+npm test             # 431 tests, sans réseau externe (faux serveurs HTTP locaux pour AethexAI, Argus et Jèko)
 npm run typecheck    # TypeScript strict
 npm run build
 ```
@@ -301,6 +317,7 @@ Workflow Git : une fonctionnalité, une branche `feature/*` depuis `develop`, un
 - **Français uniquement.** AethexAI ne documente que le français et l'anglais, pas le dioula ni le baoulé.
 - **Le modèle d'Argus ne réagit pas au montant seul** : les seuils de la démonstration sont des règles posées dans Argus.
 - **Plafond de 200 000 FCFA** : vient des notes des ingénieurs de Jèko, à confirmer (par opération ou cumulé).
+- **KYC statique** : le déblocage vérifie deux informations fixes, pas un vrai dossier d'identité.
 - **Sous contrainte, l'opération est retenue** (et non différée) : choix à valider avec Jèko.
 - **Webhook Jèko réel non testé** : l'unité des montants (FCFA ou centimes) est déduite de la documentation.
 - **Prototype** : aucun compte ni authentification, état en mémoire perdu au redémarrage, aucune coordonnée de prospect collectée.

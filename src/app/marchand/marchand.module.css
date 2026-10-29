@@ -337,6 +337,147 @@
   cursor: wait;
 }
 
+/* --- Historique : les opérations et leur statut, avec le déblocage des opérations bloquées --- */
+
+.history {
+  background: var(--carte);
+  border-radius: var(--rayon-carte);
+  padding: 16px;
+}
+
+.historyTitle {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--jeko-violet-profond);
+}
+
+.historyList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.historyRow {
+  padding: 12px 0;
+  border-top: 1px solid var(--bordure-claire);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.historyRow:first-child {
+  border-top: 0;
+}
+
+.historyLine {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.historyEnd {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.historyWhat,
+.historyAmount,
+.historyMeta,
+.kycIntro,
+.kycHint {
+  margin: 0;
+}
+
+.historyWhat {
+  font-weight: 600;
+}
+
+.historyAmount {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.historyMeta {
+  font-size: 14px;
+  color: var(--texte-doux);
+}
+
+.badge {
+  border-radius: var(--rayon-rond);
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badgeDone {
+  background: #dcf5e7;
+  color: var(--succes);
+}
+
+.badgeWaiting {
+  background: var(--bleu-pale);
+  color: var(--bleu-auvent);
+}
+
+.badgeMuted {
+  background: var(--fond);
+  color: var(--texte-doux);
+}
+
+.badgeBlocked {
+  background: var(--alerte-fond);
+  color: var(--alerte-texte);
+}
+
+.unlockBtn {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 2px solid var(--jeko-violet);
+  border-radius: var(--rayon-bouton);
+  background: transparent;
+  color: var(--jeko-violet);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.unlockBtn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.kycForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--fond);
+  border-radius: var(--rayon-bouton);
+  padding: 14px;
+}
+
+.kycIntro {
+  font-weight: 600;
+}
+
+.kycLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 15px;
+}
+
+.kycHint {
+  font-size: 14px;
+  color: var(--texte-doux);
+}
+
 /* QR que le client scanne (simulation) : assez grand pour être scanné depuis un autre téléphone, sans dépasser l'écran. */
 .clientQr {
   display: block;

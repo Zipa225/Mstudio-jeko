@@ -106,7 +106,7 @@ test("turn : sessions indépendantes", async () => {
 
 test("une erreur inattendue donne un message générique, jamais le détail", async () => {
   const rt = fresh();
-  replaceRuntime({ ...rt, dialog: { handleTurn: () => { throw new Error("détail interne confidentiel"); } } });
+  replaceRuntime({ ...rt, dialog: { handleTurn: () => { throw new Error("détail interne confidentiel"); }, resumeBlocked: () => { throw new Error("inutile"); } } });
   const r = await say("bonjour");
   assert.deepEqual([r.status, r.body], [500, { error: "internal_error" }]);
   assert.ok(!r.raw.includes("confidentiel"));
@@ -422,7 +422,7 @@ test("démo complète par les routes : encaisser, contrainte, refus, support", a
   assert.equal(getRuntime().mock.listTransfers().length, 0, "aucune somme n'est partie");
 
   // 4. Transfert de 250 000 francs : refus poli et alerte de rappel.
-  assert.match((await say("Envoie deux cent cinquante mille francs à Koné")).body.reply, /Un conseiller Jèko va te rappeler/);
+  assert.match((await say("Envoie deux cent cinquante mille francs à Koné")).body.reply, /en attente de vérification/);
   const after = await getState();
   assert.equal(after.body.counts.blocked, 1);
   assert.ok(after.body.alerts.some((a: any) => a.type === "blocked"));

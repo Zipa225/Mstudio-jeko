@@ -51,15 +51,19 @@ export interface DialogDeps {
 
 export interface SyncDialog {
   handleTurn(sessionId: string, text: string): TurnResult;
+  /** Remet une opération bloquée à confirmer, après une vérification d'identité réussie (voir kyc.ts). */
+  resumeBlocked(sessionId: string, operationId: string): TurnResult;
 }
 
 export interface AsyncDialog {
   handleTurn(sessionId: string, text: string): Promise<TurnResult>;
+  resumeBlocked(sessionId: string, operationId: string): Promise<TurnResult>;
 }
 
 /** Un dialogue dont on ne sait pas s'il est synchrone : les routes attendent le résultat dans les deux cas. */
 export interface AnyDialog {
   handleTurn(sessionId: string, text: string): TurnResult | Promise<TurnResult>;
+  resumeBlocked(sessionId: string, operationId: string): TurnResult | Promise<TurnResult>;
 }
 
 export type Dialog = AnyDialog;
@@ -263,14 +267,18 @@ export function createDialog(deps: DialogDeps): AnyDialog {
       store.addAlert({
         level: "warning",
         type: "blocked",
-        title: "Opération bloquée : rappel à faire",
-        detail: `${p.kind === "send" ? "Transfert" : "Encaissement"} de ${formatXof(amount)} FCFA${p.kind === "send" ? ` vers ${who(p)}` : ""} refusé. Un conseiller doit rappeler le marchand.`,
+        title: "Opération bloquée : vérification d'identité requise",
+        detail: `${p.kind === "send" ? "Transfert" : "Encaissement"} de ${formatXof(amount)} FCFA${p.kind === "send" ? ` vers ${who(p)}` : ""} bloqué. Le marchand peut le débloquer depuis son historique en vérifiant son identité.`,
         operationId: op.id,
         score: a.score,
         factors: a.factors,
       });
       clear(s);
-      return plain("Je ne peux pas faire ça maintenant, pour ta sécurité. Un conseiller Jèko va te rappeler.", false, "refusal");
+      // Pas de « un conseiller va te rappeler » : l'opération est en attente, et la commerçante sait où la retrouver.
+      return turn(
+        line`Cette opération de ${amt(amount)} francs est en attente de vérification. Tu peux la débloquer dans ton historique.`,
+        false, undefined, "verify",
+      );
     }
 
     const op = store.addOperation({ ...base, status: "to_confirm" });
@@ -485,24 +493,54 @@ export function createDialog(deps: DialogDeps): AnyDialog {
     return handleIdle(s, text);
   }
 
+  /**
+   * La commerçante a prouvé son identité : l'opération bloquée redevient « à confirmer ». Rien n'est exécuté ici : la
+   * relecture du montant et un « oui » explicite restent obligatoires, comme pour toute opération.
+   */
+  function resume(sessionId: string, operationId: string): TurnResult {
+    const op = store.getOperation(operationId);
+    if (!op || op.status !== "blocked") return plain("Cette opération n'est plus à débloquer.", false, "refusal");
+    const s = store.getSession(sessionId);
+    // Une commande en cours de confirmation dans cette session est abandonnée : on ne confirme qu'une chose à la fois.
+    cancelOperation(s.pending?.stage === "confirm" ? store.getOperation(s.pending.operationId) : undefined);
+    store.updateOperation(op.id, { status: "to_confirm" });
+    s.pending = {
+      stage: "confirm", kind: op.kind, amount: op.amount, wallet: op.wallet, beneficiary: op.beneficiary, phone: op.phone, operationId: op.id,
+    };
+    store.addAlert({
+      level: "info",
+      type: "unblocked",
+      title: "Opération débloquée après vérification d'identité",
+      detail: `${op.kind === "send" ? "Transfert" : "Encaissement"} de ${formatXof(op.amount)} FCFA${op.kind === "send" ? ` vers ${who(op)}` : ""} : le marchand a prouvé son identité (KYC statique). Il doit encore confirmer.`,
+      operationId: op.id,
+      score: op.score,
+      factors: op.factors,
+    });
+    if (op.kind === "collect") return turn(line`Identité vérifiée. Tu veux encaisser ${amt(op.amount)} francs${via(op.wallet)}. Tu confirmes ?`, true, undefined, "ask");
+    return turn(line`Identité vérifiée. Tu envoies ${amt(op.amount)} francs${via(op.wallet)} à ${who(op)}. Tu confirmes ?`, true, undefined, "ask");
+  }
+
   // Avec Argus ou la vraie caisse Jèko (réseau), les tours d'une même session s'enchaînent : le suivant attend la fin du précédent.
   const isAsync = risk.async === true || cashier.async === true;
   const tails = new Map<string, Promise<void>>();
 
+  function inOrder(sessionId: string, work: () => Maybe<TurnResult>): TurnResult | Promise<TurnResult> {
+    if (!isAsync) return work() as TurnResult;
+    const previous = tails.get(sessionId) ?? Promise.resolve();
+    const result = previous.then(work);
+    const settled = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    tails.set(sessionId, settled);
+    void settled.then(() => {
+      if (tails.get(sessionId) === settled) tails.delete(sessionId);
+    });
+    return result;
+  }
+
   return {
-    handleTurn(sessionId: string, rawText: string): TurnResult | Promise<TurnResult> {
-      if (!isAsync) return runTurn(sessionId, rawText) as TurnResult;
-      const previous = tails.get(sessionId) ?? Promise.resolve();
-      const result = previous.then(() => runTurn(sessionId, rawText));
-      const settled = result.then(
-        () => undefined,
-        () => undefined,
-      );
-      tails.set(sessionId, settled);
-      void settled.then(() => {
-        if (tails.get(sessionId) === settled) tails.delete(sessionId);
-      });
-      return result;
-    },
+    handleTurn: (sessionId: string, rawText: string) => inOrder(sessionId, () => runTurn(sessionId, rawText)),
+    resumeBlocked: (sessionId: string, operationId: string) => inOrder(sessionId, () => resume(sessionId, operationId)),
   };
 }
