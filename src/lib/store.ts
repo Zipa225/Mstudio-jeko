@@ -60,7 +60,8 @@ export interface Merchant {
 
 /** Commande en cours d'élaboration (le « brouillon ») : elle vit dans la session, pas dans les opérations. */
 export interface Pending {
-  stage: "need_amount" | "need_beneficiary" | "confirm";
+  /** `need_kind` : un montant a été compris mais pas le verbe ; `kind` n'est alors qu'une valeur provisoire. */
+  stage: "need_kind" | "need_amount" | "need_beneficiary" | "confirm";
   kind: "collect" | "send";
   amount?: number;
   wallet?: Wallet;
