@@ -78,6 +78,20 @@ test("envoyer : la casse est ramenée à la normale, une casse voulue est gardé
   assert.equal(extractBeneficiary("envoie 5000 à Kone"), "Kone", "on n'invente pas un accent absent");
 });
 
+test("envoyer : un titre n'est pas un nom, « à monsieur Diallo » donne Diallo", () => {
+  assert.equal(extractBeneficiary("envoie 5000 à monsieur Diallo"), "Diallo");
+  assert.equal(extractBeneficiary("envoie 5000 à madame Fatou"), "Fatou");
+  assert.equal(extractBeneficiary("envoie 5000 pour tanti Adjoua"), "Adjoua");
+  assert.equal(extractBeneficiary("envoie 5000 à mon frère Koffi"), "Koffi");
+  // Faute de nom derrière, le titre sert de nom : sinon l'agent demanderait « à qui ? » et la seule
+  // réponse possible serait le même mot.
+  assert.equal(extractBeneficiary("envoie 5000 à tonton"), "Tonton");
+  assert.equal(extractBeneficiary("envoie 5000 à monsieur"), "Monsieur");
+  // Même chose en réponse à « à qui ? ».
+  assert.equal(extractBeneficiary("monsieur Diallo", { bare: true }), "Diallo");
+  assert.equal(extractBeneficiary("tonton", { bare: true }), "Tonton");
+});
+
 test("envoyer : un numéro de téléphone devient le bénéficiaire, avec ou sans indicatif", () => {
   check([
     ["envoie 5000 au 07 01 02 03 04", { kind: "send", amount: 5000, phone: "0701020304" }],

@@ -56,6 +56,12 @@ export const formatPhone = (phone: string): string => phone.replace(/(\d{2})(?=\
 
 const MARKERS = new Set(["a", "pour", "chez", "vers"]);
 const FILLERS = new Set(["mon", "ma", "numero", "num", "de", "du"]);
+/**
+ * Titres et appellations qui précèdent le nom : « à monsieur Diallo » doit rendre « Diallo », pas « Monsieur ».
+ * Faute de nom derrière, le titre sert lui-même de nom (« à tonton » rend « Tonton ») : sinon l'agent redemanderait
+ * « à qui ? » et la seule réponse possible serait le même mot.
+ */
+const TITRES = new Set(["monsieur", "madame", "mademoiselle", "tonton", "tanti", "tantie", "papa", "maman", "frere", "soeur"]);
 const STOP = new Set([
   "le", "la", "les", "l", "un", "une", "des", "mon", "ma", "mes", "ton", "ta", "numero", "num",
   "par", "wave", "orange", "mtn", "moov", "money", "francs", "franc", "fcfa", "cfa", "xof",
@@ -89,16 +95,27 @@ export function extractBeneficiary(text: string, options: { bare?: boolean } = {
   for (let i = 0; i < words.length; i++) {
     if (!MARKERS.has(norm[i])) continue;
     let j = i + 1;
-    while (j < words.length && FILLERS.has(norm[j])) j++;
-    const name = nameFrom(words[j]);
+    let titre: string | undefined;
+    while (j < words.length && (FILLERS.has(norm[j]) || TITRES.has(norm[j]))) {
+      if (TITRES.has(norm[j])) titre ??= words[j];
+      j++;
+    }
+    const name = nameFrom(words[j]) ?? nameFrom(titre);
     if (name) return name;
   }
   if (options.bare) {
+    let titre: string | undefined;
     for (const w of words) {
       if (CONTRACTION.test(w)) continue;
+      if (TITRES.has(normalize(w))) {
+        titre ??= w;
+        continue;
+      }
       const name = nameFrom(w);
       if (name) return name;
     }
+    const name = nameFrom(titre);
+    if (name) return name;
   }
   return undefined;
 }

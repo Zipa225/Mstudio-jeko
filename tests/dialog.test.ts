@@ -104,10 +104,11 @@ test("démo : transfert de 150 000 FCFA à un inconnu, raison dite à voix haute
   const { say, calls, store, last } = setup();
   const a = say("Envoie cent cinquante mille francs à Koné");
   assert.equal(a.awaitingConfirm, true);
-  assert.match(a.reply, /^Attention\./);
-  assert.match(a.reply, /nouveau numéro pour toi/);
+  // Le montant et le destinataire en tête, la raison ensuite, une question fermée pour finir.
+  assert.match(a.reply, /^150 000 francs pour Koné\./);
+  assert.match(a.reply, /nouveau contact/);
   assert.match(a.reply, /beaucoup plus que d'habitude/);
-  assert.match(a.reply, /Tu envoies 150 000 francs à Koné\. C'est bien toi qui décides \?$/);
+  assert.match(a.reply, /Je l'envoie \?$/);
   assert.match(a.speech, /cent cinquante mille francs/);
   assert.deepEqual([last().decision, last().score], ["verify", 60]);
   assert.ok(noMoneyMoved(calls));
@@ -162,7 +163,7 @@ test("bénéficiaire par numéro de téléphone", () => {
 
 test("les accents du bénéficiaire sont conservés", () => {
   const { say } = setup();
-  assert.match(say("Envoie vingt mille francs à Koné").reply, /à Koné\./);
+  assert.match(say("Envoie vingt mille francs à Koné").reply, /pour Koné\./);
 });
 
 test("transfert de nuit : le critère d'heure est pris en compte", () => {
