@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { POST as sttTest } from "../src/app/api/stt-test/route";
-import { isMicProfile, MIC_PROFILES, saveMicProfile, savedMicProfile } from "../src/app/marchand/audio";
-import { bestProfile, EXPECTED_PHRASE, phraseScore, scoreLabel } from "../src/app/micro/score";
+import { isMicProfile, MIC_PROFILES, saveMicProfile, saveSttEngine, savedMicProfile, savedSttEngine } from "../src/app/marchand/audio";
+import { bestProfile, chooseEngine, EXPECTED_PHRASE, phraseScore, scoreLabel } from "../src/app/micro/score";
 import { AethexError } from "../src/lib/aethex";
 import type { VoiceService } from "../src/lib/ports";
 import { createRuntime, replaceRuntime } from "../src/lib/runtime";
@@ -64,21 +64,83 @@ test("meilleur réglage : la transcription la plus proche gagne, le premier en c
   assert.equal(bestProfile([]), undefined);
 });
 
+test("meilleur réglage : à score égal, un son saturé ne passe jamais devant un son propre", () => {
+  const same = "Encaisse cinq mille francs par Wave";
+  assert.equal(bestProfile([
+    { profile: "standard", heard: same, saturated: true },
+    { profile: "sans_reduction", heard: same },
+    { profile: "brut", heard: same },
+  ]), "sans_reduction");
+  assert.equal(bestProfile([
+    { profile: "standard", heard: same, saturated: true },
+    { profile: "brut", heard: same, saturated: true },
+  ]), "standard", "tous saturés : le premier");
+  assert.equal(bestProfile([
+    { profile: "standard", heard: same, saturated: true },
+    { profile: "brut", heard: "Encaisse 5000 francs" },
+  ]), "standard", "un meilleur score l'emporte, même saturé : le texte compris prime");
+  assert.equal(bestProfile([
+    { profile: "standard", heard: same },
+    { profile: "brut", heard: same },
+  ]), "standard", "propres tous les deux : le premier");
+});
+
+test("moteur : AethexAI, sauf si le navigateur a STRICTEMENT mieux compris", () => {
+  const aethex = [
+    { profile: "standard" as const, heard: "Je suis ok 5000 fois par 8" },
+    { profile: "brut" as const, heard: "C'est qu'il faut par où" },
+  ];
+  assert.equal(chooseEngine(aethex, "Encaisse 5000 francs par Wave"), "navigateur");
+  assert.equal(chooseEngine(aethex, "Encaisse cinq mille"), "aethex", "3 mots contre 3 : égalité");
+  assert.equal(chooseEngine(aethex, "Encaisse 5000 francs"), "navigateur", "4 mots contre 3 : mieux");
+  assert.equal(chooseEngine(aethex, "Je suis ok 5000 fois par 8"), "aethex", "égalité : AethexAI");
+  assert.equal(chooseEngine(aethex, "bonjour"), "aethex");
+  assert.equal(chooseEngine(aethex, undefined), "aethex", "pas d'essai du navigateur");
+  assert.equal(chooseEngine([], "Encaisse 5000 francs par Wave"), "navigateur", "AethexAI n'a rien donné");
+  assert.equal(chooseEngine([], "on teste ces leçons"), "aethex", "le navigateur n'a rien compris non plus");
+});
+
+test("moteur : le choix se mémorise, valeur inconnue ou stockage absent donnent AethexAI", () => {
+  const g = globalThis as unknown as { localStorage?: unknown };
+  const saved = g.localStorage;
+  try {
+    g.localStorage = undefined;
+    assert.equal(savedSttEngine(), "aethex");
+    assert.doesNotThrow(() => saveSttEngine("navigateur"));
+    const memory = new Map<string, string>();
+    g.localStorage = { getItem: (k: string) => memory.get(k) ?? null, setItem: (k: string, v: string) => void memory.set(k, v) };
+    assert.equal(savedSttEngine(), "aethex");
+    saveSttEngine("navigateur");
+    assert.equal(savedSttEngine(), "navigateur");
+    saveSttEngine("aethex");
+    assert.equal(savedSttEngine(), "aethex");
+    memory.set("jeko-micro-moteur", "n'importe quoi");
+    assert.equal(savedSttEngine(), "aethex");
+    g.localStorage = { getItem: () => { throw new Error("bloqué"); }, setItem: () => { throw new Error("bloqué"); } };
+    assert.equal(savedSttEngine(), "aethex");
+    assert.doesNotThrow(() => saveSttEngine("navigateur"));
+  } finally {
+    g.localStorage = saved;
+  }
+});
+
 // --- Les réglages de micro -------------------------------------------------------------------------
 
-test("profils : trois réglages, du plus traité au brut", () => {
-  assert.deepEqual(Object.keys(MIC_PROFILES), ["standard", "sans_reduction", "brut"]);
+test("profils : quatre réglages, du plus traité au brut", () => {
+  assert.deepEqual(Object.keys(MIC_PROFILES), ["standard", "sans_reduction", "sans_gain", "brut"]);
   const c = (p: keyof typeof MIC_PROFILES) => MIC_PROFILES[p].constraints as Record<string, unknown>;
   assert.deepEqual([c("standard").echoCancellation, c("standard").noiseSuppression, c("standard").autoGainControl], [true, true, true]);
   assert.deepEqual([c("sans_reduction").echoCancellation, c("sans_reduction").noiseSuppression, c("sans_reduction").autoGainControl], [true, false, true]);
+  assert.deepEqual([c("sans_gain").echoCancellation, c("sans_gain").noiseSuppression, c("sans_gain").autoGainControl], [false, true, false], "évite le gain automatique qui sature");
   assert.deepEqual([c("brut").echoCancellation, c("brut").noiseSuppression, c("brut").autoGainControl], [false, false, false]);
+  assert.equal(MIC_PROFILES.sans_gain.silence.threshold, 0.008);
   for (const p of Object.values(MIC_PROFILES)) assert.equal((p.constraints as Record<string, unknown>).channelCount, 1);
   assert.equal(MIC_PROFILES.brut.silence.threshold, 0.008, "sans gain automatique la voix est plus basse : seuil plus bas");
   assert.deepEqual(MIC_PROFILES.standard.silence, {});
 });
 
 test("profils : reconnaissance d'un nom valide", () => {
-  for (const ok of ["standard", "sans_reduction", "brut"]) assert.equal(isMicProfile(ok), true, ok);
+  for (const ok of ["standard", "sans_reduction", "sans_gain", "brut"]) assert.equal(isMicProfile(ok), true, ok);
   for (const no of ["", "autre", "toString", "__proto__", "constructor", 3, undefined, null]) assert.equal(isMicProfile(no), false, String(no));
 });
 

@@ -1,6 +1,7 @@
 // Aides pures de l'écran de la vendeuse : états, textes, choix d'affichage. Sans React, donc testables.
 
 import type { Tone, TurnResult } from "../../lib/dialog";
+import { CLIPPING_LIMIT } from "./audio";
 
 /** Ce que fait l'écran : au repos, il écoute, il réfléchit, il parle. */
 export type Phase = "idle" | "listening" | "thinking" | "speaking";
@@ -69,10 +70,11 @@ export const isTestMode = (search: string): boolean => new URLSearchParams(searc
 export const isDebugMode = (search: string): boolean => new URLSearchParams(search).get("debug") === "1";
 
 /** Une ligne lisible sur l'enregistrement : durée, volume d'origine, amplification appliquée, et un diagnostic. */
-export function describeRecording(stats: { durationSeconds: number; peak: number; gain: number }): string {
+export function describeRecording(stats: { durationSeconds: number; peak: number; gain: number; clipped?: number }): string {
   const fmt = (n: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(n);
   const quality =
-    stats.peak < 0.004 ? "quasi silencieux : le micro n'a presque rien capté"
+    (stats.clipped ?? 0) > CLIPPING_LIMIT ? "SATURÉ : le son est déformé, baisse le volume du micro ou éloigne-toi de lui"
+    : stats.peak < 0.004 ? "quasi silencieux : le micro n'a presque rien capté"
     : stats.peak < 0.05 ? "voix très basse : rapproche le micro"
     : stats.gain > 4 ? "voix basse (remontée automatiquement)"
     : "volume correct";

@@ -1,32 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { startRecording, type Recording } from "./marchand/audio";
+import { savedSttEngine, startRecording, type Recording } from "./marchand/audio";
+import { browserSpeechSupported, getRecognition, type Recognition } from "./marchand/browserSpeech";
 import styles from "./marchand/marchand.module.css";
 import {
   canSimulateClientPayment, describeRecording, errorView, GREETING, heardLine, isDebugMode, isTestMode, jekoModeFrom, keepNumbersTogether, micErrorMessage,
   newSessionId, PAYMENT_POLL_MAX_MS, PAYMENT_POLL_MS, payLink, PHASE_LABEL, screenKind, showConfirmButtons, sourceLine, voiceModeFrom,
   type Phase, type TurnView, type VoiceMode,
 } from "./marchand/view";
-
-// Reconnaissance vocale du navigateur : voix de secours, quand AethexAI n'est pas configuré.
-interface Recognition {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  continuous: boolean;
-  start(): void;
-  stop(): void;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: ((e: { error?: string }) => void) | null;
-  onend: (() => void) | null;
-}
-type RecognitionCtor = new () => Recognition;
-
-function getRecognition(): RecognitionCtor | undefined {
-  const w = window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition;
-}
 
 /** Un WAV vide : jouer ce son sur un geste de la vendeuse autorise ensuite la lecture des réponses sur téléphone. */
 const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
@@ -337,7 +319,9 @@ export default function MarchandPage() {
       return;
     }
     unlockAudio();
-    if (voiceModeRef.current === "aethex") void listenWithAethex();
+    // La page /micro peut avoir montré que la reconnaissance du navigateur comprend mieux cette voix : AethexAI parle toujours.
+    const browserListens = savedSttEngine() === "navigateur" && browserSpeechSupported();
+    if (voiceModeRef.current === "aethex" && !browserListens) void listenWithAethex();
     else listenWithBrowser();
   }
 

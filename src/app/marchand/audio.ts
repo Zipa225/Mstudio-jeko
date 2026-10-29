@@ -86,7 +86,12 @@ export interface AudioStats {
   rms: number;
   /** Amplification appliquée avant l'envoi. */
   gain: number;
+  /** Part des échantillons collés au maximum (≥ 0,98) : un son saturé est déformé et la reconnaissance le comprend mal. */
+  clipped: number;
 }
+
+/** Au-delà de cette part d'échantillons saturés, le son est déformé de façon audible. */
+export const CLIPPING_LIMIT = 0.005;
 
 /** Amplification maximale : au-delà, on gonflerait surtout le bruit. */
 export const MAX_GAIN = 40;
@@ -101,23 +106,26 @@ const SILENCE_PEAK = 0.004;
  * 99,5e centile, pour qu'un claquement isolé ne décide pas du volume de toute la phrase.
  */
 export function normalizeLevel(samples: Float32Array): { samples: Float32Array; stats: Omit<AudioStats, "durationSeconds"> } {
-  if (samples.length === 0) return { samples, stats: { peak: 0, rms: 0, gain: 1 } };
+  if (samples.length === 0) return { samples, stats: { peak: 0, rms: 0, gain: 1, clipped: 0 } };
   const abs = new Float32Array(samples.length);
   let peak = 0;
+  let saturated = 0;
   for (let i = 0; i < samples.length; i++) {
     abs[i] = Math.abs(samples[i]);
     if (abs[i] > peak) peak = abs[i];
+    if (abs[i] >= 0.98) saturated++;
   }
   const rms = rmsOf(samples);
-  if (peak < SILENCE_PEAK) return { samples, stats: { peak, rms, gain: 1 } };
+  const clipped = saturated / samples.length;
+  if (peak < SILENCE_PEAK) return { samples, stats: { peak, rms, gain: 1, clipped } };
   abs.sort();
   const robust = abs[Math.min(abs.length - 1, Math.floor(abs.length * 0.995))] || peak;
   const gain = Math.min(MAX_GAIN, TARGET_PEAK / robust);
   // Déjà au bon niveau (ou plus fort) : on laisse le son tel quel, sans le baisser ni le recopier.
-  if (gain < 1.1) return { samples, stats: { peak, rms, gain: 1 } };
+  if (gain < 1.1) return { samples, stats: { peak, rms, gain: 1, clipped } };
   const out = new Float32Array(samples.length);
   for (let i = 0; i < samples.length; i++) out[i] = Math.max(-1, Math.min(1, samples[i] * gain));
-  return { samples: out, stats: { peak, rms, gain } };
+  return { samples: out, stats: { peak, rms, gain, clipped } };
 }
 
 export type StopReason = "silence" | "max" | "no_speech";
@@ -222,7 +230,7 @@ export interface Recording {
  * parfois la reconnaissance vocale et la gênent d'autres fois, selon l'appareil. La page /micro essaie les trois profils
  * avec la voix de la personne et garde celui que le moteur comprend le mieux.
  */
-export type MicProfile = "standard" | "sans_reduction" | "brut";
+export type MicProfile = "standard" | "sans_reduction" | "sans_gain" | "brut";
 
 export const MIC_PROFILES: Record<MicProfile, { label: string; constraints: MediaTrackConstraints; silence: Partial<SilenceOptions> }> = {
   standard: {
@@ -234,6 +242,11 @@ export const MIC_PROFILES: Record<MicProfile, { label: string; constraints: Medi
     label: "Sans réduction de bruit",
     constraints: { echoCancellation: true, noiseSuppression: false, autoGainControl: true, channelCount: 1 },
     silence: {},
+  },
+  sans_gain: {
+    label: "Sans gain automatique : évite le son saturé",
+    constraints: { echoCancellation: false, noiseSuppression: true, autoGainControl: false, channelCount: 1 },
+    silence: { threshold: 0.008 },
   },
   brut: {
     label: "Brut : aucun traitement du navigateur",
@@ -262,6 +275,27 @@ export function saveMicProfile(profile: MicProfile): void {
     localStorage.setItem(MIC_PROFILE_KEY, profile);
   } catch {
     /* stockage indisponible : le profil standard servira */
+  }
+}
+
+/** Qui écoute la vendeuse : AethexAI (par défaut), ou la reconnaissance du navigateur si elle comprend mieux sa voix. */
+export type SttEngine = "aethex" | "navigateur";
+
+const STT_ENGINE_KEY = "jeko-micro-moteur";
+
+export function savedSttEngine(): SttEngine {
+  try {
+    return localStorage.getItem(STT_ENGINE_KEY) === "navigateur" ? "navigateur" : "aethex";
+  } catch {
+    return "aethex";
+  }
+}
+
+export function saveSttEngine(engine: SttEngine): void {
+  try {
+    localStorage.setItem(STT_ENGINE_KEY, engine);
+  } catch {
+    /* stockage indisponible : AethexAI servira */
   }
 }
 
