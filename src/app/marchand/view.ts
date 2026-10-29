@@ -66,6 +66,44 @@ export const jekoModeFrom = (health: { jeko?: unknown } | undefined): "live" | "
 /** `?test=1` : mode clavier, sans micro. */
 export const isTestMode = (search: string): boolean => new URLSearchParams(search).get("test") === "1";
 
+/** `?demo=1` : panneau du présentateur, des boutons qui disent les phrases de la démonstration à la place de la voix. */
+export const isDemoPanel = (search: string): boolean => new URLSearchParams(search).get("demo") === "1";
+
+/**
+ * Prénoms jamais utilisés dans les essais (Argus retient les bénéficiaires : un prénom déjà vu n'est plus « nouveau » et ne
+ * déclenche plus la question de vérification). Ni Koné, Ouattara ni Sanogo, ni les trois contacts d'Awa.
+ */
+export const DEMO_NAMES = [
+  "Traoré", "Coulibaly", "Diabaté", "Bamba", "Kouassi", "Yao", "Konan", "Fofana", "Soro", "Gnagne", "Tano", "Doumbia", "Cissé",
+  "Touré", "Kouadio", "Zadi", "Ahoua", "Bakayoko", "Dosso", "Sylla",
+];
+
+/** Un prénom au hasard (`random` entre 0 et 1), différent de `not` quand c'est possible. */
+export function pickDemoName(random: number, not?: string): string {
+  const pool = DEMO_NAMES.filter((n) => n !== not);
+  return pool[Math.min(pool.length - 1, Math.floor(random * pool.length))];
+}
+
+export interface DemoPhrase {
+  id: "encaisse" | "oui" | "transfert" | "contrainte" | "refus" | "support" | "non";
+  label: string;
+  /** Ce que la page envoie, comme si la vendeuse l'avait dit. */
+  text: string;
+  /** « contrainte » : le serveur ajoute le mot secret, la page ne le connaît pas. */
+  macro?: "contrainte";
+}
+
+/** Les phrases de la démonstration, dans l'ordre des scènes du README. */
+export const demoPhrases = (name: string): DemoPhrase[] => [
+  { id: "encaisse", label: "1. Encaisser 5 000 F par Wave", text: "Encaisse cinq mille francs par Wave" },
+  { id: "oui", label: "Oui", text: "oui" },
+  { id: "transfert", label: `2. Envoyer 150 000 F à ${name}`, text: `Envoie cent cinquante mille francs à ${name}` },
+  { id: "contrainte", label: "3. Oui, sous contrainte", text: "oui", macro: "contrainte" },
+  { id: "refus", label: `4. Envoyer 250 000 F à ${name}`, text: `Envoie deux cent cinquante mille francs à ${name}` },
+  { id: "support", label: "5. Question : le plafond", text: "J'ai atteint la limite de 200 000, comment augmenter mon plafond ?" },
+  { id: "non", label: "Non", text: "non" },
+];
+
 /** `?debug=1` : rejoue le son envoyé à la reconnaissance vocale, avec son niveau, pour comprendre une transcription fausse. */
 export const isDebugMode = (search: string): boolean => new URLSearchParams(search).get("debug") === "1";
 

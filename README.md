@@ -60,7 +60,7 @@ page `/` en simule l'écran.
 
 | Adresse | Pour qui | Rôle |
 | --- | --- | --- |
-| `/` | La commerçante | Un bouton micro, la réponse en grand, boutons Oui et Non. `?test=1` : saisie au clavier. `?debug=1` : réécoute le son envoyé. |
+| `/` | La commerçante | Un bouton micro, la réponse en grand, boutons Oui et Non. `?test=1` : saisie au clavier. `?debug=1` : réécoute le son envoyé. `?demo=1` : boutons du présentateur. |
 | `/analyste` | Le conseiller, grand écran | Compteurs, alertes, opérations, panneau Prospects, bannière rouge de contrainte. Mise à jour toutes les 1,2 s. |
 | `/prospect` | Un futur marchand | Entretien en quatre questions (activité, volume, moyens de paiement, ville), texte ou voix. |
 | `/micro` | L'installateur | Compare quatre réglages de micro (et la reconnaissance du navigateur), retient le meilleur pour l'appareil. |
@@ -96,6 +96,10 @@ une simulée, choisies par la configuration au démarrage.
 | ALLOW | Relecture, puis exécution après « oui » |
 | VERIFY | Question de vérification avec la raison du doute, puis exécution après « oui » |
 | QUARANTINE, BLOCK | Refus poli, alerte « rappel à faire » chez l'analyste |
+
+Le délai laissé au moteur ML d'Argus est porté à **1500 ms** dans `docker/argus/docker-compose.yml` (150 ms par défaut chez Argus) : après un
+moment d'inactivité, Argus assemble ses données « sur cache froid » en environ une seconde, et au-delà de 150 ms il passait en repli
+« fail-closed », donc refusait un encaissement normal (observé sur le premier encaissement d'une démonstration).
 
 Argus est mis en place avec **deux règles de démonstration** (`npm run argus:regles`) : 100 000 FCFA ou plus vers un nouveau
 bénéficiaire déclenche la vérification, plus de 200 000 FCFA est refusé. Le modèle seul n'est pas sensible au montant : un transfert
@@ -228,7 +232,12 @@ vérifié par la voix »). Utilisez alors un autre prénom neuf pour rejouer ens
 
 ### Plan B
 
-- **La voix ne passe pas (bruit)** : mode clavier `/?test=1` ; l'assistant répond quand même à voix haute et tout le reste est identique.
+- **La voix ne passe pas (bruit)** : le **panneau présentateur** `/?demo=1` (avec `DEMO_MODE=1`) affiche un bouton par scène, dans l'ordre :
+  « 1. Encaisser 5 000 F par Wave », « Oui », « 2. Envoyer 150 000 F à *Prénom* », « 3. Oui, sous contrainte », « 4. Envoyer 250 000 F »,
+  « 5. Question : le plafond ». Le prénom est tiré parmi des prénoms neufs pour Argus (lien « Autre prénom » pour en changer). Le bouton
+  « sous contrainte » dit « Oui, c'est bon » suivi du mot secret **ajouté par le serveur** : le mot n'est jamais dans la page. L'assistant
+  répond quand même à voix haute et tout le reste (Argus, analyste, alertes) est identique. Le mode clavier `/?test=1` reste disponible.
+  À dire au jury : ces boutons remplacent la voix de la commerçante, pas le reste.
 - **AethexAI indisponible** : l'assistant parle avec la voix du navigateur ; `/api/health` le montre. Pour écouter, clavier ou reconnaissance du navigateur.
 - **Argus indisponible** : calcul local, avec une alerte « mode dégradé » ; la même histoire se raconte (150 000 FCFA : vérifier, 250 000 FCFA : refuser).
 - **Tout lâche** : la vidéo de secours enregistrée dans une pièce calme.
@@ -251,7 +260,7 @@ vérifié par la voix »). Utilisez alors un autre prénom neuf pour rejouer ens
 ## Tests et qualité
 
 ```bash
-npm test             # 375 tests, sans réseau externe (faux serveurs HTTP locaux pour AethexAI, Argus et Jèko)
+npm test             # 387 tests, sans réseau externe (faux serveurs HTTP locaux pour AethexAI, Argus et Jèko)
 npm run typecheck    # TypeScript strict
 npm run build
 ```
