@@ -1,0 +1,136 @@
+# Argus en local, pour la démonstration : seulement ce dont l'application a besoin pour scorer une opération.
+#   postgres + redis (données) -> migrate (migrations Prisma, une fois) -> fastapi (moteur ML) -> nestjs (API sur http://localhost:4040)
+# Le docker-compose.yml du dépôt Argus vise un serveur (reverse proxy sur 80/443, réseau externe, cAdvisor, Grafana...) ;
+# ici on ne garde que le chemin des scores. La console web d'Argus est optionnelle : `--profile console` (http://localhost:5050).
+#
+# Les sources viennent de la branche `develop` d'Argus, exportée dans ARGUS_DIR (par défaut ../true-argus/argus-develop).
+# Export sans toucher à ton clone d'Argus, depuis son dossier :
+#   git archive origin/develop api-transaction moteur-ia client-console | tar -x -C ../argus-develop   (créer le dossier avant)
+# Tout est publié sur 127.0.0.1 seulement : rien n'est joignable depuis le réseau local ni depuis un tunnel.
+#
+#   npm run argus:env       crée docker/argus/.env avec des secrets aléatoires (une fois)
+#   npm run argus:up        construit et démarre les conteneurs
+#   npm run argus:licence   crée la licence et l'écrit dans .env.local
+#   npm run argus:down      arrête (les données restent) ; `npm run argus:down -- -v` efface aussi les données
+
+name: jeko-argus
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-argus}
+      POSTGRES_USER: ${POSTGRES_USER:-argus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Lance npm run argus:env pour créer docker/argus/.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-argus} -d ${POSTGRES_DB:-argus}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Lance npm run argus:env}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Applique les migrations Prisma avant l'API, puis s'arrête (code 0).
+  migrate:
+    build:
+      context: ${ARGUS_DIR:-../../../true-argus/argus-develop}/api-transaction
+      dockerfile: Dockerfile
+      target: builder
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-argus}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-argus}?schema=public
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  fastapi:
+    build:
+      context: ${ARGUS_DIR:-../../../true-argus/argus-develop}/moteur-ia
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      FASTAPI_WORKERS: ${FASTAPI_WORKERS:-2}
+      # Même secret que ML_API_KEY côté nestjs (en-tête X-API-Key).
+      ARGUS_API_KEY: ${ML_API_KEY:?Lance npm run argus:env}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  nestjs:
+    build:
+      context: ${ARGUS_DIR:-../../../true-argus/argus-develop}/api-transaction
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4040:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-argus}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-argus}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      ML_ENGINE_URL: http://fastapi:8001
+      ML_API_KEY: ${ML_API_KEY}
+      ML_TIMEOUT_MS: ${ML_TIMEOUT_MS:-150}
+      TENANT_ID: ${TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Lance npm run argus:env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Lance npm run argus:env}
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CORS_ORIGINS: http://localhost:5050,http://127.0.0.1:5050
+      # Crée le premier compte opérateur (administrateur) si la base n'en a aucun : sert à créer la licence.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Lance npm run argus:env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Lance npm run argus:env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fastapi:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/health/ready', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # Console web d'Argus (optionnelle) : docker compose --profile console up -d
+  console:
+    profiles: ["console"]
+    build:
+      context: ${ARGUS_DIR:-../../../true-argus/argus-develop}/client-console
+      dockerfile: Dockerfile
+      args:
+        # Figé au build : l'adresse que le NAVIGATEUR utilise pour joindre l'API.
+        NEXT_PUBLIC_API_URL: http://localhost:4040
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5050:4322"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4040
+    depends_on:
+      nestjs:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
