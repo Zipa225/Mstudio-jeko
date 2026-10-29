@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { POST as sttTest } from "../src/app/api/stt-test/route";
-import { CLIPPING_LIMIT, isMicProfile, MIC_PROFILES, saveMicProfile, saveSttEngine, savedMicProfile, savedSttEngine } from "../src/app/marchand/audio";
+import {
+  CLIPPING_LIMIT, isMicProfile, LEVEL_MESSAGE, levelVerdict, MIC_PROFILES, openMic, saveMicDevice, saveMicProfile, saveSttEngine,
+  savedMicDevice, savedMicProfile, savedSttEngine,
+} from "../src/app/marchand/audio";
 import { saturationAdvice } from "../src/app/marchand/view";
 import { bestProfile, chooseEngine, EXPECTED_PHRASE, phraseScore, scoreLabel } from "../src/app/micro/score";
 import { AethexError } from "../src/lib/aethex";
@@ -145,6 +148,104 @@ test("saturation : un son propre, ou à la limite exacte, est envoyé", () => {
   assert.equal(saturationAdvice("standard", { clipped: CLIPPING_LIMIT }), undefined, "à la limite : pas encore saturé");
   assert.ok(saturationAdvice("standard", { clipped: CLIPPING_LIMIT + 0.001 }));
   assert.equal(saturationAdvice("brut", { clipped: Number.NaN }), undefined, "mesure illisible : on envoie plutôt que de bloquer");
+});
+
+test("niveau : le verdict d'un micro selon ce qu'il capte", () => {
+  assert.equal(levelVerdict(0, 500), "attente", "début : on attend que la personne parle");
+  assert.equal(levelVerdict(0.001, 2999), "attente");
+  assert.equal(levelVerdict(0, 3000), "silence", "3 s sans rien : le micro ne capte rien");
+  assert.equal(levelVerdict(0.0039, 5000), "silence");
+  assert.equal(levelVerdict(0.004, 5000), "faible", "un souffle mais presque rien");
+  assert.equal(levelVerdict(0.0199, 5000), "faible");
+  assert.equal(levelVerdict(0.02, 100), "ok", "dès que la voix passe, inutile d'attendre");
+  assert.equal(levelVerdict(0.5, 5000), "ok");
+  assert.equal(levelVerdict(0.979, 5000), "ok");
+  assert.equal(levelVerdict(0.98, 100), "sature");
+  assert.equal(levelVerdict(1, 5000), "sature");
+  for (const verdict of ["attente", "silence", "faible", "ok", "sature"] as const) assert.ok(LEVEL_MESSAGE[verdict].length > 20, verdict);
+  assert.match(LEVEL_MESSAGE.silence, /Paramètres, Système, Son, Entrée/);
+});
+
+test("micro choisi : se mémorise, se retire, et un stockage absent ne casse rien", () => {
+  const g = globalThis as unknown as { localStorage?: unknown };
+  const saved = g.localStorage;
+  try {
+    g.localStorage = undefined;
+    assert.equal(savedMicDevice(), undefined);
+    assert.doesNotThrow(() => saveMicDevice("abc"));
+    const memory = new Map<string, string>();
+    g.localStorage = {
+      getItem: (k: string) => memory.get(k) ?? null,
+      setItem: (k: string, v: string) => void memory.set(k, v),
+      removeItem: (k: string) => void memory.delete(k),
+    };
+    assert.equal(savedMicDevice(), undefined);
+    saveMicDevice("micro-ecouteurs");
+    assert.equal(savedMicDevice(), "micro-ecouteurs");
+    saveMicDevice(undefined);
+    assert.equal(savedMicDevice(), undefined, "retiré : on revient au micro du système");
+    g.localStorage = { getItem: () => { throw new Error("bloqué"); }, setItem: () => { throw new Error("bloqué"); }, removeItem: () => { throw new Error("bloqué"); } };
+    assert.equal(savedMicDevice(), undefined);
+    assert.doesNotThrow(() => saveMicDevice(undefined));
+  } finally {
+    g.localStorage = saved;
+  }
+});
+
+test("openMic : le micro choisi est demandé en exact, et s'il a disparu on prend celui du système", async () => {
+  const g = globalThis as unknown as { localStorage?: unknown; navigator?: unknown };
+  const savedStorage = g.localStorage;
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const calls: unknown[] = [];
+  const memory = new Map<string, string>([["jeko-micro-appareil", "ecouteurs-debranches"]]);
+  g.localStorage = {
+    getItem: (k: string) => memory.get(k) ?? null,
+    setItem: (k: string, v: string) => void memory.set(k, v),
+    removeItem: (k: string) => void memory.delete(k),
+  };
+  const stream = { id: "flux" } as unknown as MediaStream;
+  try {
+    const install = (getUserMedia: (c: any) => Promise<MediaStream>) =>
+      Object.defineProperty(globalThis, "navigator", { value: { mediaDevices: { getUserMedia } }, configurable: true, writable: true });
+
+    // 1. Le micro choisi existe : demandé avec deviceId exact, contraintes du profil conservées.
+    install(async (c) => { calls.push(c); return stream; });
+    assert.equal(await openMic("sans_gain"), stream);
+    assert.deepEqual((calls[0] as any).audio.deviceId, { exact: "ecouteurs-debranches" });
+    assert.equal((calls[0] as any).audio.autoGainControl, false);
+    assert.equal((calls[0] as any).audio.noiseSuppression, true);
+
+    // 2. Il a disparu : on prend celui du système et on oublie le micro enregistré.
+    calls.length = 0;
+    install(async (c) => { calls.push(c); if (c.audio.deviceId) throw Object.assign(new Error("absent"), { name: "OverconstrainedError" }); return stream; });
+    assert.equal(await openMic("standard"), stream);
+    assert.equal(calls.length, 2);
+    assert.equal((calls[1] as any).audio.deviceId, undefined, "deuxième essai sans micro imposé");
+    assert.equal(savedMicDevice(), undefined, "le micro disparu est oublié");
+
+    // 3. Une autre erreur (permission refusée) n'est jamais avalée.
+    memory.set("jeko-micro-appareil", "autre");
+    install(async () => { throw Object.assign(new Error("refus"), { name: "NotAllowedError" }); });
+    await assert.rejects(() => openMic("standard"), { name: "NotAllowedError" });
+    assert.equal(savedMicDevice(), "autre", "refus de permission : le choix n'est pas effacé");
+
+    // 4. Un micro passé explicitement (page de test) ne touche pas au micro enregistré.
+    calls.length = 0;
+    install(async (c) => { calls.push(c); throw Object.assign(new Error("absent"), { name: "NotFoundError" }); });
+    await assert.rejects(() => openMic("standard", "essai"));
+    assert.equal(savedMicDevice(), "autre");
+
+    // 5. Sans micro choisi : une seule demande, sans deviceId.
+    memory.clear();
+    calls.length = 0;
+    install(async (c) => { calls.push(c); return stream; });
+    await openMic("brut");
+    assert.equal(calls.length, 1);
+    assert.equal((calls[0] as any).audio.deviceId, undefined);
+  } finally {
+    g.localStorage = savedStorage;
+    if (navigatorDescriptor) Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+  }
 });
 
 // --- Les réglages de micro -------------------------------------------------------------------------

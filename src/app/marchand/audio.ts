@@ -299,6 +299,66 @@ export function saveSttEngine(engine: SttEngine): void {
   }
 }
 
+const MIC_DEVICE_KEY = "jeko-micro-appareil";
+
+/** Le micro choisi sur la page /micro (identifiant donné par le navigateur), ou `undefined` : celui du système. */
+export function savedMicDevice(): string | undefined {
+  try {
+    return localStorage.getItem(MIC_DEVICE_KEY) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `undefined` : on revient au micro par défaut du système. */
+export function saveMicDevice(deviceId: string | undefined): void {
+  try {
+    if (deviceId) localStorage.setItem(MIC_DEVICE_KEY, deviceId);
+    else localStorage.removeItem(MIC_DEVICE_KEY);
+  } catch {
+    /* stockage indisponible : le micro du système servira */
+  }
+}
+
+/**
+ * Ouvre le micro avec les contraintes du profil, sur le micro choisi (`deviceId`, sinon celui enregistré, sinon celui du
+ * système). Si le micro enregistré n'existe plus (écouteurs débranchés, par exemple), on l'oublie et on prend celui du système.
+ */
+export async function openMic(profile: MicProfile, deviceId: string | undefined = savedMicDevice()): Promise<MediaStream> {
+  const base = MIC_PROFILES[profile].constraints;
+  if (deviceId) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: { ...base, deviceId: { exact: deviceId } } });
+    } catch (e) {
+      const name = (e as { name?: string })?.name;
+      if (name !== "OverconstrainedError" && name !== "NotFoundError") throw e;
+      if (deviceId === savedMicDevice()) saveMicDevice(undefined);
+    }
+  }
+  return navigator.mediaDevices.getUserMedia({ audio: base });
+}
+
+export type LevelVerdict = "attente" | "silence" | "faible" | "ok" | "sature";
+
+/**
+ * Ce que dit le niveau mesuré sur un micro. `peak` : plus grand niveau vu depuis le début (0 à 1) ; `elapsedMs` : durée de la
+ * mesure. Pendant les 3 premières secondes sans son, on attend : la personne n'a peut-être pas encore parlé.
+ */
+export function levelVerdict(peak: number, elapsedMs: number): LevelVerdict {
+  if (peak >= 0.98) return "sature";
+  if (peak >= 0.02) return "ok";
+  if (elapsedMs < 3000) return "attente";
+  return peak < 0.004 ? "silence" : "faible";
+}
+
+export const LEVEL_MESSAGE: Record<LevelVerdict, string> = {
+  attente: "Parle maintenant : la barre doit bouger.",
+  silence: "Ce micro ne capte rien. Choisis un autre micro dans la liste, ou règle l'entrée du son dans ton appareil (sous Windows : Paramètres, Système, Son, Entrée).",
+  faible: "Ce micro capte très peu : rapproche-toi, ou monte le volume d'entrée de ton appareil.",
+  ok: "Ce micro capte bien ta voix.",
+  sature: "Le son sature : baisse le volume d'entrée de ton appareil, ou éloigne-toi un peu.",
+};
+
 /** Du son brut au fichier envoyé : mono, 16 kHz, volume remonté. Pure, donc testée sans micro. */
 export function prepareForUpload(channels: Float32Array[], sampleRate: number): { wav: ArrayBuffer; stats: AudioStats } {
   const mono = resample(mixToMono(channels), sampleRate, TARGET_SAMPLE_RATE);
@@ -313,7 +373,7 @@ export function prepareForUpload(channels: Float32Array[], sampleRate: number): 
  */
 export async function startRecording(profile: MicProfile = savedMicProfile(), base: SilenceOptions = DEFAULT_SILENCE): Promise<Recording> {
   const options: SilenceOptions = { ...base, ...MIC_PROFILES[profile].silence };
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_PROFILES[profile].constraints });
+  const stream = await openMic(profile);
   const AudioCtor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   const context = new AudioCtor();
   if (context.state === "suspended") await context.resume().catch(() => undefined);

@@ -63,7 +63,7 @@ page `/` en simule l'écran.
 | `/` | La commerçante | Un bouton micro, la réponse en grand, boutons Oui et Non. `?test=1` : saisie au clavier. `?debug=1` : réécoute le son envoyé. `?demo=1` : boutons du présentateur. |
 | `/analyste` | Le conseiller, grand écran | Compteurs, alertes, opérations, panneau Prospects, bannière rouge de contrainte. Mise à jour toutes les 1,2 s. |
 | `/prospect` | Un futur marchand | Entretien en quatre questions (activité, volume, moyens de paiement, ville), texte ou voix. |
-| `/micro` | L'installateur | Compare quatre réglages de micro (et la reconnaissance du navigateur), retient le meilleur pour l'appareil. |
+| `/micro` | L'installateur | Étape 1 : liste les micros, barre de niveau en direct et verdict (« ce micro ne capte rien », « le son sature »), choix du bon micro. Étape 2 : compare quatre réglages (et la reconnaissance du navigateur), retient le meilleur pour l'appareil. |
 | `/api/health` | Technique | Dit ce qui est branché (jamais les valeurs). |
 
 ## Architecture
@@ -215,7 +215,8 @@ un **micro-casque**.
 2. Redémarrer l'application (elle lit la nouvelle licence), puis cliquer sur « Réinitialiser la démo » sur l'écran analyste.
 3. Vérifier `/api/health` : `argus` vaut `api`, `voice` vaut `aethex`, `duress` n'est pas `disabled`.
 4. Choisir un **prénom neuf** pour la scène 2 (un prénom déjà utilisé ne déclenche plus la vérification).
-5. Passer par `/micro` sur le téléphone, dans les conditions de la salle.
+5. Passer par `/micro` sur le téléphone, dans les conditions de la salle : la barre de niveau doit bouger quand on parle (sinon, choisir un
+   autre micro dans la liste ; avec des écouteurs, le micro choisi par le navigateur n'est pas toujours le leur).
 
 ### Les scènes
 
@@ -260,7 +261,7 @@ vérifié par la voix »). Utilisez alors un autre prénom neuf pour rejouer ens
 ## Tests et qualité
 
 ```bash
-npm test             # 387 tests, sans réseau externe (faux serveurs HTTP locaux pour AethexAI, Argus et Jèko)
+npm test             # 392 tests, sans réseau externe (faux serveurs HTTP locaux pour AethexAI, Argus et Jèko)
 npm run typecheck    # TypeScript strict
 npm run build
 ```

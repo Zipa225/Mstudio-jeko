@@ -7,6 +7,7 @@ import {
 import { browserSpeechSupported, recognizeOnce, type BrowserListening } from "../marchand/browserSpeech";
 import { describeRecording, micErrorMessage, voiceModeFrom } from "../marchand/view";
 import styles from "../prospect/prospect.module.css";
+import MicCheck from "./MicCheck";
 import { bestProfile, chooseEngine, EXPECTED_PHRASE, phraseScore, scoreLabel } from "./score";
 
 const PROFILES = Object.keys(MIC_PROFILES) as MicProfile[];
@@ -160,6 +161,8 @@ export default function MicroPage() {
       {voiceReady === false && (
         <p className={styles.notice} role="alert">La voix AethexAI n'est pas configurée sur ce serveur : ce test ne peut pas se faire.</p>
       )}
+
+      <MicCheck />
 
       <section className={styles.thread} aria-live="polite">
         <p className={`${styles.bubble} ${styles.agent}`}>
