@@ -337,6 +337,59 @@
   cursor: wait;
 }
 
+/* Panneau du présentateur (?demo=1) : visible seulement en démonstration, jamais pour la commerçante. */
+.demoPanel {
+  background: var(--carte);
+  border: 2px dashed var(--jeko-violet);
+  border-radius: var(--rayon-carte);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.demoTitle {
+  margin: 0;
+  color: var(--texte-doux);
+  font-size: 14px;
+}
+
+.demoGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.demoButton {
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 2px solid var(--jeko-violet);
+  border-radius: var(--rayon-bouton);
+  background: transparent;
+  color: var(--jeko-violet);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.demoButton:disabled,
+.demoReroll:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.demoReroll {
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--texte-doux);
+  font-family: inherit;
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .payLink {
   display: flex;
   align-items: center;

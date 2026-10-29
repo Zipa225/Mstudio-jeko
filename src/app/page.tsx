@@ -5,8 +5,8 @@ import { savedSttEngine, startRecording, type Recording } from "./marchand/audio
 import { browserSpeechSupported, getRecognition, type Recognition } from "./marchand/browserSpeech";
 import styles from "./marchand/marchand.module.css";
 import {
-  canSimulateClientPayment, describeRecording, errorView, GREETING, heardLine, isDebugMode, isTestMode, jekoModeFrom, keepNumbersTogether, micErrorMessage,
-  newSessionId, PAYMENT_POLL_MAX_MS, PAYMENT_POLL_MS, payLink, PHASE_LABEL, screenKind, showConfirmButtons, sourceLine, voiceModeFrom,
+  canSimulateClientPayment, demoPhrases, describeRecording, errorView, GREETING, heardLine, isDebugMode, isDemoPanel, isTestMode, jekoModeFrom, keepNumbersTogether, micErrorMessage,
+  newSessionId, PAYMENT_POLL_MAX_MS, PAYMENT_POLL_MS, payLink, PHASE_LABEL, pickDemoName, screenKind, showConfirmButtons, sourceLine, voiceModeFrom,
   type Phase, type TurnView, type VoiceMode,
 } from "./marchand/view";
 
@@ -56,6 +56,8 @@ export default function MarchandPage() {
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("browser");
   const [testMode, setTestMode] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
+  const [demoPanel, setDemoPanel] = useState(false);
+  const [demoName, setDemoName] = useState("Traoré");
   const [debugInfo, setDebugInfo] = useState<{ url: string; summary: string } | undefined>();
   const [voiceSupported, setVoiceSupported] = useState(true);
   const [input, setInput] = useState("");
@@ -86,6 +88,8 @@ export default function MarchandPage() {
     setSessionId(id);
     setTestMode(isTestMode(window.location.search));
     setDebugMode(isDebugMode(window.location.search));
+    setDemoPanel(isDemoPanel(window.location.search));
+    setDemoName(pickDemoName(Math.random()));
     setVoiceSupported(getRecognition() !== undefined);
     fetch("/api/health", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : undefined))
@@ -207,16 +211,22 @@ export default function MarchandPage() {
   }, [jekoLive, show]);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, macro?: "contrainte") => {
       setPhase("thinking");
       setNotice(undefined);
       try {
         const res = await fetch("/api/turn", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ sessionId, text }),
+          body: JSON.stringify({ sessionId, text, ...(macro ? { macro } : {}) }),
           cache: "no-store",
         });
+        if (res.status === 409) {
+          const body = (await res.json().catch(() => ({}))) as { message?: string };
+          setPhase("idle");
+          setNotice(body.message ?? "Cette phrase n'est pas disponible.");
+          return;
+        }
         if (!res.ok) throw new Error(String(res.status));
         show((await res.json()) as TurnView);
       } catch {
@@ -467,6 +477,31 @@ export default function MarchandPage() {
           />
           <button type="submit" className={styles.send} disabled={busy || !input.trim()}>Envoyer</button>
         </form>
+      )}
+
+      {demoPanel && demoMode && (
+        <section className={styles.demoPanel} aria-label="Phrases de démonstration">
+          <p className={styles.demoTitle}>Mode présentateur : ces boutons disent la phrase à la place de la voix</p>
+          <div className={styles.demoGrid}>
+            {demoPhrases(demoName).map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={styles.demoButton}
+                disabled={busy}
+                onClick={() => {
+                  unlockAudio();
+                  void send(p.text, p.macro);
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <button type="button" className={styles.demoReroll} disabled={busy} onClick={() => setDemoName((n) => pickDemoName(Math.random(), n))}>
+            Autre prénom (le prénom doit être nouveau pour Argus)
+          </button>
+        </section>
       )}
 
       <p className={styles.footer}>{footer}</p>

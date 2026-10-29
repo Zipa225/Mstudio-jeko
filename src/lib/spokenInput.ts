@@ -8,7 +8,11 @@ import type { Runtime } from "./runtime";
 
 export const MAX_TEXT = 500;
 
-export type SpokenInput = { ok: true; sessionId: string; text: string } | { ok: false; response: Response };
+/** Macros de démonstration (JSON seulement) : le serveur complète la phrase, le navigateur ne connaît jamais le mot secret. */
+export const DEMO_MACROS = ["contrainte"] as const;
+export type DemoMacro = (typeof DEMO_MACROS)[number];
+
+export type SpokenInput = { ok: true; sessionId: string; text: string; macro?: DemoMacro } | { ok: false; response: Response };
 
 export async function readSpokenInput(req: Request, rt: Runtime): Promise<SpokenInput> {
   const fail = (body: unknown, status: number): SpokenInput => ({ ok: false, response: json(body, status) });
@@ -42,8 +46,10 @@ export async function readSpokenInput(req: Request, rt: Runtime): Promise<Spoken
 
   const body = await readJson(req);
   if (!body.ok) return { ok: false, response: body.response };
-  const { sessionId, text } = body.data;
+  const { sessionId, text, macro } = body.data;
   if (typeof sessionId !== "string" || !SESSION_ID.test(sessionId)) return fail({ error: "invalid_session" }, 400);
   if (typeof text !== "string" || text.length > MAX_TEXT) return fail({ error: "invalid_text" }, 400);
-  return { ok: true, sessionId, text };
+  if (macro === undefined) return { ok: true, sessionId, text };
+  if (typeof macro !== "string" || !(DEMO_MACROS as readonly string[]).includes(macro)) return fail({ error: "invalid_macro" }, 400);
+  return { ok: true, sessionId, text, macro: macro as DemoMacro };
 }
