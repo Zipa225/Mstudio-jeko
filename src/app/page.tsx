@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { startRecording, type Recording } from "./marchand/audio";
 import styles from "./marchand/marchand.module.css";
 import {
-  canSimulateClientPayment, errorView, GREETING, heardLine, isTestMode, jekoModeFrom, keepNumbersTogether, micErrorMessage,
+  canSimulateClientPayment, describeRecording, errorView, GREETING, heardLine, isDebugMode, isTestMode, jekoModeFrom, keepNumbersTogether, micErrorMessage,
   newSessionId, PAYMENT_POLL_MAX_MS, PAYMENT_POLL_MS, payLink, PHASE_LABEL, screenKind, showConfirmButtons, sourceLine, voiceModeFrom,
   type Phase, type TurnView, type VoiceMode,
 } from "./marchand/view";
@@ -73,6 +73,8 @@ export default function MarchandPage() {
   const [jekoLive, setJekoLive] = useState(false);
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("browser");
   const [testMode, setTestMode] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<{ url: string; summary: string } | undefined>();
   const [voiceSupported, setVoiceSupported] = useState(true);
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState<string | undefined>();
@@ -101,6 +103,7 @@ export default function MarchandPage() {
     }
     setSessionId(id);
     setTestMode(isTestMode(window.location.search));
+    setDebugMode(isDebugMode(window.location.search));
     setVoiceSupported(getRecognition() !== undefined);
     fetch("/api/health", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : undefined))
@@ -278,6 +281,12 @@ export default function MarchandPage() {
         setNotice("Je n'ai pas entendu. Réessaie.");
         return;
       }
+      if (debugMode) {
+        setDebugInfo((old) => {
+          if (old) URL.revokeObjectURL(old.url);
+          return { url: URL.createObjectURL(new Blob([heard.wav], { type: "audio/wav" })), summary: describeRecording(heard.stats) };
+        });
+      }
       await sendAudio(heard.wav);
     } catch (e) {
       recordingRef.current = null;
@@ -407,6 +416,13 @@ export default function MarchandPage() {
       </section>
 
       {notice && <p className={styles.notice} role="alert">{notice}</p>}
+
+      {debugMode && debugInfo && (
+        <div className={styles.notice}>
+          <p style={{ margin: "0 0 8px" }}>Dernier enregistrement envoyé : {debugInfo.summary}</p>
+          <audio controls src={debugInfo.url} style={{ width: "100%" }} />
+        </div>
+      )}
 
       {showConfirmButtons(result) && (
         <div className={styles.confirm}>

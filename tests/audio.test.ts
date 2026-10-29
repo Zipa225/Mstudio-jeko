@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  createSilenceDetector, DEFAULT_SILENCE, encodeWav, MAX_RECORDING_MS, mixToMono, resample, rmsOf, type SilenceDecision,
+  createSilenceDetector, DEFAULT_SILENCE, encodeWav, MAX_GAIN, MAX_RECORDING_MS, mixToMono, normalizeLevel, prepareForUpload,
+  resample, rmsOf, type SilenceDecision,
 } from "../src/app/marchand/audio";
+import { describeRecording, isDebugMode } from "../src/app/marchand/view";
 
 const text = (view: DataView, offset: number, length: number) =>
   Array.from({ length }, (_v, i) => String.fromCharCode(view.getUint8(offset + i))).join("");
@@ -91,6 +93,84 @@ test("rmsOf : niveau efficace", () => {
   assert.ok(Math.abs(rmsOf(new Float32Array(100).fill(0.5)) - 0.5) < 1e-9);
   assert.ok(Math.abs(rmsOf(new Float32Array([0.5, -0.5, 0.5, -0.5])) - 0.5) < 1e-9, "le signe ne compte pas");
   assert.equal(rmsOf(new Float32Array(10)), 0);
+});
+
+// --- Volume ---------------------------------------------------------------------------------
+
+const tone = (amp: number, n = 16_000) => Float32Array.from({ length: n }, (_v, i) => amp * Math.sin((2 * Math.PI * 220 * i) / 16_000));
+const peakOf = (x: Float32Array) => x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+
+test("normalizeLevel : une voix basse est remontée vers une crête de 0,8", () => {
+  const { samples, stats } = normalizeLevel(tone(0.05));
+  assert.ok(Math.abs(peakOf(samples) - 0.8) < 0.02, `crête ${peakOf(samples)}`);
+  assert.ok(Math.abs(stats.gain - 16) < 0.6, `gain ${stats.gain}`);
+  assert.ok(Math.abs(stats.peak - 0.05) < 1e-3, "la crête d'origine est mesurée avant normalisation");
+  assert.ok(stats.rms > 0.03 && stats.rms < 0.04);
+});
+
+test("normalizeLevel : on ne baisse jamais un son fort, et un son déjà correct ne change pas", () => {
+  const loud = tone(0.95);
+  const a = normalizeLevel(loud);
+  assert.equal(a.stats.gain, 1);
+  assert.equal(a.samples, loud, "même tableau : rien n'est copié ni modifié");
+  const fine = tone(0.8);
+  assert.equal(normalizeLevel(fine).stats.gain, 1);
+});
+
+test("normalizeLevel : le silence ou le bruit seul n'est pas amplifié", () => {
+  const hiss = tone(0.002);
+  const r = normalizeLevel(hiss);
+  assert.equal(r.stats.gain, 1);
+  assert.equal(r.samples, hiss);
+  const empty = normalizeLevel(new Float32Array(0));
+  assert.deepEqual(empty.stats, { peak: 0, rms: 0, gain: 1 });
+});
+
+test("normalizeLevel : l'amplification est plafonnée à ×40", () => {
+  const { stats, samples } = normalizeLevel(tone(0.006));
+  assert.equal(stats.gain, MAX_GAIN);
+  assert.ok(peakOf(samples) < 0.3, "pas de gonflement démesuré");
+});
+
+test("normalizeLevel : un claquement isolé ne décide pas du volume de la phrase", () => {
+  const voice = tone(0.05, 32_000);
+  voice[100] = 0.9; // un clic
+  const { stats } = normalizeLevel(voice);
+  assert.ok(stats.gain > 10, `gain ${stats.gain} : la voix est remontée malgré le clic`);
+});
+
+test("normalizeLevel : écrête à 1 au lieu de déborder", () => {
+  const voice = tone(0.05, 32_000);
+  voice[100] = 0.9;
+  const { samples } = normalizeLevel(voice);
+  assert.ok(peakOf(samples) <= 1);
+});
+
+test("prepareForUpload : mono, 16 kHz, volume remonté, WAV valide", () => {
+  const left = tone(0.05, 48_000);
+  const right = tone(0.05, 48_000);
+  const { wav, stats } = prepareForUpload([left, right], 48_000);
+  const view = new DataView(wav);
+  assert.equal(text(view, 0, 4), "RIFF");
+  assert.equal(view.getUint32(24, true), 16_000);
+  assert.equal(view.getUint16(22, true), 1);
+  assert.equal((wav.byteLength - 44) / 2, 16_000, "1 s à 48 kHz devient 16 000 échantillons");
+  assert.ok(Math.abs(stats.durationSeconds - 1) < 0.01);
+  assert.ok(stats.gain > 10);
+  const first = view.getInt16(44 + 2 * 36, true);
+  assert.ok(Math.abs(first) > 0, "le son n'est pas muet");
+});
+
+test("mode debug : détection de ?debug=1 et description de l'enregistrement", () => {
+  assert.equal(isDebugMode("?debug=1"), true);
+  assert.equal(isDebugMode("?test=1&debug=1"), true);
+  assert.equal(isDebugMode("?debug=0"), false);
+  assert.equal(isDebugMode(""), false);
+  assert.match(describeRecording({ durationSeconds: 3.24, peak: 0.0012, gain: 1 }), /quasi silencieux/);
+  assert.match(describeRecording({ durationSeconds: 3.24, peak: 0.03, gain: 26 }), /voix très basse/);
+  assert.match(describeRecording({ durationSeconds: 2, peak: 0.1, gain: 8 }), /voix basse \(remontée automatiquement\)/);
+  assert.match(describeRecording({ durationSeconds: 2, peak: 0.6, gain: 1.3 }), /volume correct/);
+  assert.match(describeRecording({ durationSeconds: 3.24, peak: 0.5, gain: 1.6 }), /^3,24 s · crête 0,5 · amplifié ×1,6/);
 });
 
 // --- Détection du silence ---------------------------------------------------------------
