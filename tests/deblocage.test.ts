@@ -13,7 +13,7 @@ import { createRuntime, getRuntime, replaceRuntime } from "../src/lib/runtime";
 import { Store } from "../src/lib/store";
 
 const NOON = new Date(Date.UTC(2026, 9, 29, 12, 0, 0));
-const GOOD = { birthDate: "14/03/1988", idLast4: "4821" };
+const GOOD = { birthDate: "08/10/2025", idLast4: "0810" };
 const BAD = { birthDate: "01/01/2000", idLast4: "0000" };
 
 function setup() {
@@ -53,14 +53,15 @@ test("kyc : la date de naissance se lit de plusieurs façons, jamais une date im
 
 test("kyc : quatre chiffres exactement, espaces tolérés", () => {
   assert.equal(parseIdLast4("4821"), "4821");
+  assert.equal(parseIdLast4("0810"), "0810", "le zéro du début est gardé");
   assert.equal(parseIdLast4(" 48 21 "), "4821");
   for (const t of ["482", "48211", "48a1", "", undefined, 4821]) assert.equal(parseIdLast4(t), undefined, String(t));
 });
 
 test("kyc : les deux informations doivent être justes", () => {
   assert.equal(checkKyc(GOOD, DEMO_KYC), true);
-  assert.equal(checkKyc({ ...GOOD, idLast4: "4822" }, DEMO_KYC), false, "pièce fausse");
-  assert.equal(checkKyc({ ...GOOD, birthDate: "15/03/1988" }, DEMO_KYC), false, "date fausse");
+  assert.equal(checkKyc({ ...GOOD, idLast4: "0811" }, DEMO_KYC), false, "pièce fausse");
+  assert.equal(checkKyc({ ...GOOD, birthDate: "09/10/2025" }, DEMO_KYC), false, "date fausse");
   assert.equal(checkKyc({ birthDate: GOOD.birthDate }, DEMO_KYC), false, "pièce absente");
   assert.equal(checkKyc({}, DEMO_KYC), false);
 });
@@ -223,7 +224,7 @@ test("/api/history : la liste de la commerçante, sans secret, avec le rappel de
   assert.equal(r.status, 200);
   assert.equal(r.body.items[0].label, "Bloquée");
   assert.equal(r.body.items[0].unlockable, true);
-  assert.equal(r.body.kycHint, "14/03/1988 et 4821");
+  assert.equal(r.body.kycHint, "08/10/2025 et 0810");
   assert.ok(!/score|factors|decision/.test(r.raw), "ni score ni raison d'Argus");
 
   fresh(false);
@@ -261,7 +262,7 @@ test("/api/unblock : faux, faux, faux : 403, 403, puis 423 ; l'opération reste 
 test("/api/unblock : les bonnes informations ramènent à la relecture, le oui exécute", async () => {
   const rt = fresh();
   const id = await blockedId();
-  const r = await read(await post(unblock, { sessionId: "awa", operationId: id, birthDate: " 14 03 1988 ", idLast4: "4821" }));
+  const r = await read(await post(unblock, { sessionId: "awa", operationId: id, birthDate: " 08 10 2025 ", idLast4: "0810" }));
   assert.equal(r.status, 200);
   assert.equal(r.body.ok, true);
   assert.equal(r.body.reply, "Identité vérifiée. Tu envoies 250 000 francs à Koné. Tu confirmes ?");
