@@ -15,6 +15,7 @@
     "jeko:test": "tsx scripts/test-jeko.ts",
     "argus:env": "tsx scripts/argus-env.ts",
     "argus:up": "docker compose -f docker/argus/docker-compose.yml up -d --build",
+    "argus:console": "docker compose -f docker/argus/docker-compose.yml --profile console up -d --build console",
     "argus:down": "docker compose -f docker/argus/docker-compose.yml down",
     "argus:logs": "docker compose -f docker/argus/docker-compose.yml logs -f --tail=50",
     "argus:licence": "tsx scripts/argus-licence.ts",
