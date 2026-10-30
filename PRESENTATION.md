@@ -244,6 +244,9 @@ Suggestion, d'après la répartition du projet. À adapter.
 | 2:00 | 4. Le blocage | « Envoie deux cent cinquante mille francs à (prénom neuf). » | « Cette opération de 250 000 francs est en attente de vérification. Tu peux la débloquer dans ton historique. » | « Si l'agresseur insiste, Argus bloque. Awa ne perd rien : elle débloquera en prouvant qui elle est. » |
 | 2:25 | 5. Le support | « J'ai atteint la limite de 200 000, comment augmenter mon plafond ? » | La réponse du support, avec sa source | « Et la même voix répond aux questions, en citant sa source. » |
 
+*Facultatif : après la scène 4, passer sur la console web d'Argus (`npm run argus:console`, http://localhost:5050, onglet déjà ouvert et connecté) :
+le tableau de bord montre les opérations que nous venons de faire, avec leur verdict. Ne pas ouvrir les pages « Règles » (erreur) ni « Codes de contrainte » (vide) : voir le README.*
+
 *Facultatif, si le temps le permet : à la scène 4, « Débloquer » dans l'historique, la date de naissance et les 4 chiffres affichés sous le formulaire en démonstration, puis « oui » à la relecture.*
 
 **Notes pour l'opérateur**

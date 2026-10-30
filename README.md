@@ -203,6 +203,26 @@ npm run argus:test      # vérifie les décisions d'Argus
 Redémarrez ensuite l'application. `npm run argus:down -- -v` efface aussi les données d'Argus. **Argus retient les bénéficiaires** : un
 nom déjà utilisé n'est plus « nouveau » et ne déclenche plus la vérification.
 
+#### La console web d'Argus (en complément de `/analyste`)
+
+```bash
+npm run argus:console   # construit et démarre la console sur http://localhost:5050 (127.0.0.1 seulement)
+```
+
+On s'y connecte avec `ADMIN_EMAIL` et `ADMIN_PASSWORD` de `docker/argus/.env`. Elle montre, pour les opérations réellement examinées
+par Argus : l'activité des dernières 24 heures, la répartition des verdicts (autorisé, à vérifier, quarantaine, bloqué), la liste des
+transactions avec leur score, et une file « Décisions à prendre » où l'analyste tranche (faux positif ou fraude confirmée).
+
+Elle **ne remplace pas `/analyste`** : la bannière rouge « Contrainte signalée », les questions passées à un conseiller, les prospects et
+les déblocages n'existent que dans notre application (la détection du mot secret se fait côté voix). Les écrans qui ne marchent pas :
+
+- **Codes de contrainte** : la console dit elle-même que ce mécanisme n'existe ni en base ni dans l'API d'Argus. À ne pas ouvrir.
+- **Règles** : erreur 422 (la console demande 200 règles par page, l'API les refuse). Nos deux règles se voient dans `argus:regles`.
+- Les opérations de transfert à vérifier y portent le motif « Profil conforme aux habitudes » : c'est le texte du moteur ML, que notre
+  application remplace à l'oral par la vraie raison. La décision, elle, vient de notre règle.
+- Les essais ratés d'avant la démonstration y apparaissent aussi (par exemple « Moteur de secours actif » après un démarrage à froid) :
+  remettre Argus à zéro avant de passer (`argus:down -- -v`, voir le script de démonstration).
+
 ### Jèko (réel)
 
 Jèko n'a pas de bac à sable : chaque demande de paiement est réelle. Les clés se créent dans le tableau de bord web de Jèko Business
