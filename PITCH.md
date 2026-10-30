@@ -2,7 +2,8 @@
 
 Durée : **environ 3 minutes de discours et de démonstration**, puis les questions. Ce fichier contient le texte à dire, le minutage,
 ce qu'on fait à l'écran, les réponses aux questions probables, ce qu'il ne faut pas dire, et la liste du matin. Les phrases d'Awa et les
-réponses de l'assistant sont celles du script de démonstration du [README](README.md#script-de-démonstration).
+réponses de l'assistant sont celles du script de démonstration du [README](README.md#script-de-démonstration). Le script du
+PowerPoint, diapositive par diapositive, est dans [PRESENTATION.md](PRESENTATION.md).
 
 ## Le message à retenir (une phrase)
 
