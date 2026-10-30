@@ -1,0 +1,90 @@
+/* Charte visuelle issue de STYLE.md. Valeurs de marque mesurées, le reste en [Proposition]. */
+:root {
+  /* Marque Jèko (mesuré) */
+  --jeko-violet: #3a0ca2;
+  --jeko-violet-profond: #240465;
+  --jeko-violet-actif: #130449;
+  --fond: #f3f4f6;
+  --carte: #ffffff;
+  --alerte-fond: #fed99d;
+  --alerte-texte: #3b1e00;
+  --texte: #000000;
+  --texte-doux: #6a6a6a;
+  --bordure-claire: #f5f3f9;
+
+  /* Accents d'illustration (mesuré) */
+  --bleu-auvent: #152bcb;
+  --bleu-clair: #5fa9f3;
+  --bleu-pale: #e3ecf8;
+  --vague: #deeef5;
+  --connecte: #04af60;
+
+  /* Proposition, à confirmer avec les autres écrans de Jèko */
+  --succes: #0b7a3e;
+  --danger: #d92d20;
+  --critique: #e5484d;
+  --nuit: #14053f;
+
+  /* Forme (estimée sur la capture) */
+  --rayon-carte: 24px;
+  --rayon-bouton: 16px;
+  --rayon-rond: 999px;
+
+  --police: var(--font-poppins), "Poppins", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--fond);
+  color: var(--texte);
+  font-family: var(--police);
+  font-size: 18px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.carte {
+  background: var(--carte);
+  border: 1px solid var(--bordure-claire);
+  border-radius: var(--rayon-carte);
+  padding: 20px;
+}
+
+.bouton-principal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: var(--rayon-bouton);
+  background: var(--jeko-violet);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

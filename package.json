@@ -1,0 +1,38 @@
+{
+  "name": "jeko-voix-argus",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hackathon M.Studio x AethexAI : Jèko Voix protégé par Argus",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "aethex:test": "tsx scripts/test-aethex.ts",
+    "aethex:voices": "tsx scripts/test-aethex.ts --voices",
+    "jeko:stores": "tsx scripts/test-jeko.ts --stores",
+    "jeko:test": "tsx scripts/test-jeko.ts",
+    "argus:env": "tsx scripts/argus-env.ts",
+    "argus:up": "docker compose -f docker/argus/docker-compose.yml up -d --build",
+    "argus:console": "docker compose -f docker/argus/docker-compose.yml --profile console up -d --build console",
+    "argus:down": "docker compose -f docker/argus/docker-compose.yml down",
+    "argus:logs": "docker compose -f docker/argus/docker-compose.yml logs -f --tail=50",
+    "argus:licence": "tsx scripts/argus-licence.ts",
+    "argus:regles": "tsx scripts/argus-regles.ts",
+    "argus:test": "tsx scripts/test-argus.ts",
+    "argus:seed": "tsx scripts/seed-argus.ts"
+  },
+  "dependencies": {
+    "next": "^15.5.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
