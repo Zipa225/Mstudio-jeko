@@ -110,7 +110,7 @@ derniers chiffres de sa pièce d'identité**. Si c'est juste, l'opération repas
 « oui » (rien ne part sans lui). Après **3 réponses fausses**, elle reste bloquée et l'analyste est alerté.
 
 Faute de temps, ce KYC est **statique** : les deux informations sont celles du personnage d'Awa (`src/lib/kyc.ts`, `DEMO_KYC` :
-08/10/2025 et 0810), rappelées sous le formulaire en mode démonstration. Un vrai KYC passerait par le dossier de vérification de Jèko.
+08/10/1990 et 0810), rappelées sous le formulaire en mode démonstration. Un vrai KYC passerait par le dossier de vérification de Jèko.
 Une opération retenue par la phrase de contrainte s'affiche dans l'historique comme un succès, jamais comme « retenue ».
 
 Le délai laissé au moteur ML d'Argus est porté à **1500 ms** dans `docker/argus/docker-compose.yml` (150 ms par défaut chez Argus) : après un
