@@ -18,7 +18,7 @@ export interface Kyc {
 }
 
 /** Les informations d'Awa, le personnage de démonstration. Ce ne sont les données de personne. */
-export const DEMO_KYC: Kyc = { birthDate: "1988-03-14", idLast4: "4821" };
+export const DEMO_KYC: Kyc = { birthDate: "2025-10-08", idLast4: "0810" };
 
 export interface KycProof {
   birthDate?: unknown;
